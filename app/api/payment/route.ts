@@ -1,4 +1,4 @@
-import { NextResponse } from "next";
+import { NextResponse } from "next/server";
 import { getPaytmConfig } from "@/lib/admin-db";
 import { generateQRCodeSVG } from "@/lib/qr-generator";
 
