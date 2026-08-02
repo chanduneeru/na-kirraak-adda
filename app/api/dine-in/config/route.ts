@@ -9,6 +9,9 @@ export async function GET() {
       success: true,
       config,
       upiId: config.dineInUpiId || paytmConfig.upiId || "9966533466@ybl",
+      bankDetails: paytmConfig.bankDetails || "State Bank of India | A/C: 1234567890 | IFSC: SBIN0001234 | Name: NA KIRRAAK ADDA",
+      enableBank: paytmConfig.enableBank !== false,
+      enableUpi: paytmConfig.enableUpi !== false,
       enableCod: config.enableDineInCod,
     });
   } catch (error: any) {

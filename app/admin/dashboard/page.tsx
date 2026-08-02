@@ -3020,64 +3020,102 @@ export default function AdminDashboard() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {tablesStatus.map((tbl: any) => {
-                  const isOccupied = tbl.status === "occupied" || tbl.status === "preparing";
-                  const isReady = tbl.status === "ready";
-
-                  return (
-                    <div
-                      key={tbl.tableNumber}
-                      className={`rounded-2xl p-4 border text-center flex flex-col justify-between space-y-2 transition ${
-                        isReady
-                          ? "bg-emerald-500/10 border-emerald-500/50 text-emerald-300"
-                          : isOccupied
-                          ? "bg-amber-500/10 border-amber-500/50 text-amber-300"
-                          : "bg-black/40 border-white/10 text-zinc-400"
-                      }`}
+              {/* Master Single Dine-In QR Code Section */}
+              <div className="rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-950/40 via-black to-slate-950 p-6 space-y-4 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-500/20 pb-4">
+                  <div>
+                    <span className="inline-block bg-amber-500 text-black text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full mb-1">
+                      ⭐ Permanent QR Code
+                    </span>
+                    <h4 className="text-xl font-black text-amber-400">Master Dine-In QR Code</h4>
+                    <p className="text-xs text-zinc-400">Single permanent QR code for your entire restaurant. Place this QR on all tables.</p>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const masterUrl = `${window.location.origin}/dine-in`;
+                        navigator.clipboard.writeText(masterUrl);
+                        alert("✅ Master Dine-In URL copied to clipboard:\n" + masterUrl);
+                      }}
+                      className="bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl border border-white/10 transition"
                     >
-                      <div className="flex items-center justify-between text-xs font-bold">
-                        <span>{tbl.tableName}</span>
-                        <span className={`w-2 h-2 rounded-full ${isReady ? "bg-emerald-400" : isOccupied ? "bg-amber-400" : "bg-zinc-600"}`}></span>
-                      </div>
+                      📋 Copy URL
+                    </button>
+                    <a
+                      href="/dine-in"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="bg-zinc-800 hover:bg-zinc-700 text-amber-300 font-bold text-xs px-3.5 py-2 rounded-xl border border-white/10 transition flex items-center gap-1"
+                    >
+                      👁️ Test Menu
+                    </a>
+                  </div>
+                </div>
 
-                      <div className="py-2">
-                        <p className="text-xs font-black uppercase tracking-wider">
-                          {isReady ? "🍲 Ready to Serve" : isOccupied ? "👨‍🍳 Cooking" : "⚪ Free"}
-                        </p>
-                        {tbl.currentTotal > 0 && <p className="text-sm font-extrabold text-white mt-1">₹{tbl.currentTotal}</p>}
-                      </div>
+                <div className="flex flex-col sm:flex-row items-center gap-6 pt-2">
+                  <div className="bg-white p-3 rounded-2xl shadow-lg border-2 border-amber-500/50 flex-shrink-0">
+                    <div dangerouslySetInnerHTML={{ __html: generateQRCodeSVG(`${typeof window !== "undefined" ? window.location.origin : ""}/dine-in`, 180) }} />
+                  </div>
 
-                      {/* Table QR Button */}
-                      <button
-                        onClick={() => {
-                          const url = `${window.location.origin}/dine-in?table=${tbl.tableNumber}`;
-                          const w = window.open("", "_blank");
-                          if (w) {
-                            const svg = generateQRCodeSVG(url, 280);
-                            w.document.write(`
-                              <html>
-                                <head><title>Print QR — ${tbl.tableName}</title></head>
-                                <body style="font-family: sans-serif; text-align: center; padding: 40px; background: #fafafa;">
-                                  <div style="border: 2px solid #000; display: inline-block; padding: 30px; border-radius: 20px; background: #fff;">
-                                    <h2 style="margin: 0 0 5px; font-size: 24px;">🍔 NA KIRRAAK ADDA</h2>
-                                    <p style="margin: 0 0 20px; color: #666; font-size: 14px;">Scan & Pay to Order</p>
-                                    ${svg}
-                                    <h1 style="margin: 20px 0 0; font-size: 32px; background: #f59e0b; color: #000; padding: 8px; border-radius: 10px;">${tbl.tableName}</h1>
-                                  </div>
-                                  <script>window.onload = () => window.print();</script>
-                                </body>
-                              </html>
-                            `);
-                          }
-                        }}
-                        className="w-full bg-white/5 hover:bg-white/10 text-white font-semibold text-[11px] py-1.5 rounded-lg border border-white/10"
-                      >
-                        🖨️ Print QR
-                      </button>
+                  <div className="space-y-3 flex-1 text-center sm:text-left">
+                    <div>
+                      <p className="text-xs text-zinc-400 font-medium">Target Destination URL:</p>
+                      <p className="text-sm font-bold text-amber-300 font-mono break-all">
+                        {typeof window !== "undefined" ? window.location.origin : ""}/dine-in
+                      </p>
                     </div>
-                  );
-                })}
+
+                    <p className="text-xs text-zinc-300">
+                      Customers scan this single QR code to open the mobile-optimized Dine-In menu on their phone, select their table, choose dishes, pay via UPI, and send orders directly to your kitchen!
+                    </p>
+
+                    <button
+                      onClick={() => {
+                        const url = `${window.location.origin}/dine-in`;
+                        const w = window.open("", "_blank");
+                        if (w) {
+                          const qrHtml = generateQRCodeSVG(url, 300);
+                          w.document.write(`
+                            <!DOCTYPE html>
+                            <html>
+                              <head>
+                                <title>Master Dine-In QR — NA KIRRAAK ADDA</title>
+                                <style>
+                                  body { font-family: system-ui, -apple-system, sans-serif; text-align: center; padding: 40px; background: #f8fafc; margin: 0; }
+                                  .card { border: 4px solid #f59e0b; display: inline-block; padding: 40px; border-radius: 28px; background: #ffffff; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); max-width: 400px; }
+                                  h1 { margin: 0; font-size: 28px; color: #0f172a; font-weight: 900; tracking: wide; }
+                                  .sub { margin: 6px 0 24px; color: #d97706; font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+                                  .scan-box { background: #fffbeb; border: 2px dashed #f59e0b; border-radius: 20px; padding: 20px; margin: 20px 0; }
+                                  .instructions { margin: 15px 0 0; font-size: 16px; color: #1e293b; font-weight: 800; }
+                                  .desc { margin: 5px 0 0; color: #64748b; font-size: 13px; }
+                                  .badge { margin-top: 24px; background: #0f172a; color: #fbbf24; padding: 10px 16px; border-radius: 14px; font-size: 13px; font-weight: 800; display: inline-block; }
+                                </style>
+                              </head>
+                              <body>
+                                <div class="card">
+                                  <h1>🍔 NA KIRRAAK ADDA</h1>
+                                  <div class="sub">Digital Dine-In Menu</div>
+                                  <div class="scan-box">
+                                    ${qrHtml}
+                                    <div class="instructions">📱 SCAN TO ORDER & PAY</div>
+                                    <div class="desc">Scan with any Mobile Camera or UPI App (GPay, PhonePe, Paytm)</div>
+                                  </div>
+                                  <div class="badge">⚡ Single Master Dine-In QR Code</div>
+                                </div>
+                                <script>window.onload = () => { setTimeout(() => window.print(), 500); };</script>
+                              </body>
+                            </html>
+                          `);
+                        }
+                      }}
+                      className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-xs px-5 py-2.5 rounded-xl shadow-lg transition flex items-center justify-center sm:justify-start gap-2"
+                    >
+                      <span>🖨️</span>
+                      <span>Print Master Dine-In QR Code</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 

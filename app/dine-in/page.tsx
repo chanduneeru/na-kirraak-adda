@@ -23,53 +23,78 @@ function DineInContent() {
   const router = useRouter();
 
   const rawTableParam = searchParams.get("table") || searchParams.get("t") || "";
-  const initialTable = rawTableParam ? (rawTableParam.toLowerCase().startsWith("table") ? rawTableParam : `Table ${rawTableParam}`) : "Table 1";
+  const initialTable = rawTableParam
+    ? rawTableParam.toLowerCase().startsWith("table")
+      ? rawTableParam
+      : `Table ${rawTableParam}`
+    : "Table 1";
 
   const [tableNumber, setTableNumber] = useState<string>(initialTable);
-  const [showTableSelector, setShowTableSelector] = useState<boolean>(!rawTableParam);
-  
+  const [showTableSelector, setShowTableSelector] = useState<boolean>(false);
+  const [customTableInput, setCustomTableInput] = useState<string>("");
+
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [vegFilter, setVegFilter] = useState<"all" | "veg" | "non-veg">("all");
   const [searchQuery, setSearchQuery] = useState("");
-  
+
   const [cart, setCart] = useState<{ item: MenuItem; quantity: number }[]>([]);
-  const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 
-  // Customer & Payment Form
+  // Customer Details & Payment State
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("UPI QR");
   const [utrReference, setUtrReference] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Dine-In config & payment settings
+  // Payment Gateway Generated State
+  const [paymentStep, setPaymentStep] = useState<"details" | "gateway">("details");
+  const [paymentGatewayData, setPaymentGatewayData] = useState<{
+    txnId: string;
+    upiId: string;
+    upiUri: string;
+    qrCodeSvg: string;
+    bankDetails: string;
+  } | null>(null);
+
+  // Dine-In Config
   const [dineInConfig, setDineInConfig] = useState({
     dineInGstRate: 0,
     dineInServiceCharge: 0,
     upiId: "9966533466@ybl",
+    bankDetails: "State Bank of India | A/C: 1234567890 | IFSC: SBIN0001234 | Name: NA KIRRAAK ADDA",
+    enableBank: true,
+    enableUpi: true,
     enableCod: false,
   });
 
   useEffect(() => {
+    // Load cached table number if present
+    const savedTable = localStorage.getItem("kirraak_dinein_table");
+    if (savedTable && !rawTableParam) {
+      setTableNumber(savedTable);
+    }
+
     // Fetch Dine-In Config
     fetch("/api/dine-in/config")
       .then((res) => res.json())
       .then((data) => {
-        if (data.success && data.config) {
+        if (data.success) {
           setDineInConfig({
-            dineInGstRate: data.config.dineInGstRate || 0,
-            dineInServiceCharge: data.config.dineInServiceCharge || 0,
+            dineInGstRate: data.config?.dineInGstRate || 0,
+            dineInServiceCharge: data.config?.dineInServiceCharge || 0,
             upiId: data.upiId || "9966533466@ybl",
+            bankDetails: data.bankDetails || "State Bank of India | A/C: 1234567890 | IFSC: SBIN0001234 | Name: NA KIRRAAK ADDA",
+            enableBank: data.enableBank !== false,
+            enableUpi: data.enableUpi !== false,
             enableCod: Boolean(data.enableCod),
           });
         }
       })
       .catch(() => {});
 
-    // Fetch Products
+    // Fetch Menu Products
     fetch("/api/products")
       .then((res) => res.json())
       .then((data) => {
@@ -79,7 +104,24 @@ function DineInContent() {
         setCategories(["All", ...uniqueCats]);
       })
       .catch(() => {});
-  }, []);
+  }, [rawTableParam]);
+
+  const handleSelectTable = (tbl: string) => {
+    setTableNumber(tbl);
+    localStorage.setItem("kirraak_dinein_table", tbl);
+    setShowTableSelector(false);
+  };
+
+  const handleCustomTableSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (customTableInput.trim()) {
+      const formatted = customTableInput.toLowerCase().startsWith("table")
+        ? customTableInput.trim()
+        : `Table ${customTableInput.trim()}`;
+      handleSelectTable(formatted);
+      setCustomTableInput("");
+    }
+  };
 
   const handleAddToCart = (item: MenuItem) => {
     setCart((prev) => {
@@ -123,18 +165,48 @@ function DineInContent() {
     return true;
   });
 
-  const handlePlaceOrder = async (e: React.FormEvent) => {
+  // Step 1: Initiate Payment Gateway Order QR for exact amount
+  const handleInitiatePaymentGateway = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerName.trim() || !phone.trim()) {
-      alert("Please enter your Name and Phone Number");
+      alert("Please enter your Name and Mobile Number");
       return;
     }
-
     if (cart.length === 0) {
       alert("Your cart is empty");
       return;
     }
 
+    setIsSubmitting(true);
+
+    try {
+      const res = await fetch("/api/payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: grandTotal,
+          customerName: customerName.trim(),
+          phone: phone.trim(),
+          tableNumber: tableNumber,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setPaymentGatewayData(data);
+        setPaymentStep("gateway");
+      } else {
+        alert(data.error || "Failed to initialize payment gateway.");
+      }
+    } catch (err: any) {
+      alert("Payment gateway error: " + err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Step 2: Confirm Order after payment completes
+  const handleFinalOrderSubmit = async () => {
     setIsSubmitting(true);
 
     try {
@@ -154,7 +226,7 @@ function DineInContent() {
         gst: gstAmount,
         deliveryCharge: 0,
         grandTotal: grandTotal,
-        paymentMethod: paymentMethod + (utrReference ? ` (Ref: ${utrReference})` : ""),
+        paymentMethod: `Payment Gateway / Bank (Txn: ${paymentGatewayData?.txnId || "Paid"}${utrReference ? `, UTR: ${utrReference}` : ""})`,
         paymentStatus: "completed",
       };
 
@@ -168,83 +240,109 @@ function DineInContent() {
       if (data.success && data.orderId) {
         setCart([]);
         setIsCheckoutOpen(false);
+        setPaymentStep("details");
         router.push(`/dine-in/status?orderId=${data.orderId}&table=${encodeURIComponent(tableNumber)}`);
       } else {
         alert(data.error || "Failed to place order. Please try again.");
       }
     } catch (err: any) {
-      alert("Error processing order: " + err.message);
+      alert("Error placing order: " + err.message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const upiLink = `upi://pay?pa=${encodeURIComponent(dineInConfig.upiId)}&pn=${encodeURIComponent("NA KIRRAAK ADDA")}&am=${grandTotal}&cu=INR&tn=${encodeURIComponent(`DineIn ${tableNumber}`)}`;
+  const handlePayClick = (upiUri: string) => {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile) {
+      window.location.href = upiUri;
+    } else {
+      const upiId = paymentGatewayData?.upiId || dineInConfig.upiId;
+      navigator.clipboard.writeText(upiId);
+      alert(`✅ Merchant UPI ID copied: "${upiId}"\n\nPlease scan the auto-generated order QR on screen with GPay, PhonePe, or Paytm to pay ₹${grandTotal}, then click Confirm.`);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-28">
-      {/* Top Header */}
-      <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-3 shadow-lg">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-32">
+      {/* Top Mobile Header */}
+      <header className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800/80 px-4 py-3 shadow-xl">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <span className="text-2xl">🍔</span>
             <div>
-              <h1 className="font-extrabold text-lg tracking-wide text-amber-400">NA KIRRAAK ADDA</h1>
-              <p className="text-xs text-slate-400 font-medium">Digital Dine-In Menu</p>
+              <h1 className="font-black text-base sm:text-lg tracking-wide text-amber-400">NA KIRRAAK ADDA</h1>
+              <p className="text-[11px] text-slate-400 font-semibold">Digital Dine-In Menu</p>
             </div>
           </div>
 
           <button
-            onClick={() => setShowTableSelector(!showTableSelector)}
-            className="flex items-center gap-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold px-3.5 py-1.5 rounded-full text-xs transition"
+            onClick={() => setShowTableSelector(true)}
+            className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-extrabold px-3 py-1.5 rounded-full text-xs transition shadow-sm"
           >
             <span>🍽️</span>
             <span>{tableNumber}</span>
-            <span className="text-[10px] text-amber-400/70">▼</span>
+            <span className="text-[10px] text-amber-400">✏️</span>
           </button>
         </div>
       </header>
 
       {/* Table Change Modal */}
       {showTableSelector && (
-        <div className="bg-slate-900 border-b border-amber-500/30 px-4 py-3 text-center">
-          <p className="text-xs text-slate-300 mb-2">Select your Table Number:</p>
-          <div className="flex justify-center gap-2 max-w-sm mx-auto">
-            <select
-              value={tableNumber}
-              onChange={(e) => {
-                setTableNumber(e.target.value);
-                setShowTableSelector(false);
-              }}
-              className="bg-slate-800 text-white text-sm font-semibold border border-slate-700 rounded-lg px-3 py-1.5 focus:outline-none focus:border-amber-500"
-            >
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="font-extrabold text-base text-amber-400">Select Your Table</h3>
+              <button onClick={() => setShowTableSelector(false)} className="text-slate-400 hover:text-white font-bold text-lg">
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">Tap your table number below or enter a custom table number:</p>
+
+            <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-1">
               {Array.from({ length: 20 }, (_, i) => `Table ${i + 1}`).map((tbl) => (
-                <option key={tbl} value={tbl}>
-                  {tbl}
-                </option>
+                <button
+                  key={tbl}
+                  onClick={() => handleSelectTable(tbl)}
+                  className={`py-2 text-xs font-bold rounded-xl border transition ${
+                    tableNumber === tbl
+                      ? "bg-amber-500 text-slate-950 border-amber-400"
+                      : "bg-slate-950 text-slate-300 border-slate-800 hover:border-amber-500/50"
+                  }`}
+                >
+                  {tbl.replace("Table ", "T-")}
+                </button>
               ))}
-            </select>
-            <button
-              onClick={() => setShowTableSelector(false)}
-              className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-4 py-1.5 rounded-lg"
-            >
-              Confirm
-            </button>
+            </div>
+
+            <form onSubmit={handleCustomTableSubmit} className="pt-2 border-t border-slate-800 flex gap-2">
+              <input
+                type="text"
+                placeholder="Or type custom table (e.g. Table 25)"
+                value={customTableInput}
+                onChange={(e) => setCustomTableInput(e.target.value)}
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+              />
+              <button type="submit" className="bg-amber-500 text-slate-950 font-bold text-xs px-3.5 py-2 rounded-xl">
+                Set
+              </button>
+            </form>
           </div>
         </div>
       )}
 
-      <main className="max-w-4xl mx-auto px-4 py-4 space-y-4">
+      <main className="max-w-4xl mx-auto px-3.5 sm:px-4 py-4 space-y-4">
         {/* Banner */}
-        <div className="bg-gradient-to-r from-amber-600/30 via-orange-600/20 to-red-600/30 border border-amber-500/30 rounded-2xl p-4 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-amber-600/30 via-orange-600/20 to-red-600/30 border border-amber-500/30 rounded-2xl p-3.5 sm:p-4 flex items-center justify-between shadow-lg">
           <div>
             <span className="inline-block bg-amber-500 text-slate-950 text-[10px] font-black uppercase px-2 py-0.5 rounded-md mb-1">
               Dine-In Special
             </span>
-            <h2 className="font-extrabold text-base text-white">Ordering for {tableNumber}</h2>
-            <p className="text-xs text-slate-300">⚡ Fast kitchen dispatch • Pay first, enjoy hot food!</p>
+            <h2 className="font-extrabold text-sm sm:text-base text-white">Ordering for {tableNumber}</h2>
+            <p className="text-[11px] sm:text-xs text-slate-300">⚡ Fast kitchen dispatch • Pay first, enjoy hot food!</p>
           </div>
-          <span className="text-3xl">🍲</span>
+          <span className="text-2xl sm:text-3xl">🍲</span>
         </div>
 
         {/* Filters */}
@@ -256,9 +354,9 @@ function DineInContent() {
               placeholder="Search dishes, biryani, starters..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 pl-10 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 pl-10 text-xs sm:text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
             />
-            <span className="absolute left-3.5 top-3 text-slate-500 text-sm">🔍</span>
+            <span className="absolute left-3.5 top-2.5 text-slate-500 text-sm">🔍</span>
           </div>
 
           {/* Veg / Non-Veg Pills */}
@@ -309,8 +407,8 @@ function DineInContent() {
           </div>
         </div>
 
-        {/* Menu Items Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Menu Items Grid: Side-by-Side 2 Items Per Row on Mobile */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3.5">
           {filteredItems.map((item) => {
             const isVeg = Boolean(item.is_veg);
             const isBestseller = Boolean(item.is_bestseller);
@@ -321,47 +419,53 @@ function DineInContent() {
             return (
               <div
                 key={item.id}
-                className="bg-slate-900 border border-slate-800/80 hover:border-slate-700 rounded-2xl p-3.5 flex gap-3.5 items-center justify-between transition"
+                className="bg-slate-900 border border-slate-800/80 hover:border-slate-700 rounded-2xl p-2.5 sm:p-3 flex flex-col justify-between h-full transition shadow-md group"
               >
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
+                <div>
+                  {/* Top Image Box */}
+                  <div className="relative w-full aspect-[4/3] rounded-xl overflow-hidden bg-slate-950 border border-slate-800 mb-2">
+                    <Image src={imgSrc} alt={item.name} fill className="object-cover group-hover:scale-105 transition duration-300" />
+                    
+                    {/* FSSAI Veg/Non-Veg Badge Top Left */}
                     <span
-                      className={`inline-block w-3.5 h-3.5 border flex items-center justify-center p-0.5 rounded-[3px] ${
+                      className={`absolute top-1.5 left-1.5 z-10 w-4 h-4 bg-slate-950/90 border flex items-center justify-center p-0.5 rounded ${
                         isVeg ? "border-emerald-500" : "border-red-500"
                       }`}
                     >
                       <span className={`w-1.5 h-1.5 rounded-full ${isVeg ? "bg-emerald-500" : "bg-red-500"}`}></span>
                     </span>
+
+                    {/* Bestseller Badge Top Right */}
                     {isBestseller && (
-                      <span className="bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded">
-                        🔥 Bestseller
+                      <span className="absolute top-1.5 right-1.5 z-10 bg-amber-500 text-slate-950 font-black text-[9px] px-1.5 py-0.5 rounded-md shadow">
+                        🔥 Top
                       </span>
                     )}
                   </div>
-                  <h3 className="font-bold text-sm text-slate-100 line-clamp-1">{item.name}</h3>
-                  <p className="text-xs text-slate-400 line-clamp-2">{item.description}</p>
-                  <p className="font-extrabold text-amber-400 text-sm">₹{price}</p>
+
+                  {/* Title & Subtitle */}
+                  <h3 className="font-bold text-xs sm:text-sm text-slate-100 line-clamp-1 leading-snug">{item.name}</h3>
+                  <p className="text-[10px] sm:text-xs text-slate-400 line-clamp-1 sm:line-clamp-2 mt-0.5 leading-tight">{item.description}</p>
                 </div>
 
-                <div className="flex flex-col items-center gap-2">
-                  <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-slate-800 border border-slate-700/50">
-                    <Image src={imgSrc} alt={item.name} fill className="object-cover" />
-                  </div>
+                {/* Price & Add Action Button */}
+                <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                  <span className="font-black text-amber-400 text-xs sm:text-sm">₹{price}</span>
 
                   {inCart ? (
-                    <div className="flex items-center bg-amber-500 text-slate-950 font-bold rounded-lg px-2 py-0.5 text-xs">
-                      <button onClick={() => handleQuantityChange(item.id, -1)} className="px-1 py-0.5 hover:bg-amber-600 rounded">
+                    <div className="flex items-center bg-amber-500 text-slate-950 font-bold rounded-lg px-1.5 py-0.5 text-xs shadow">
+                      <button onClick={() => handleQuantityChange(item.id, -1)} className="px-1 py-0.5 hover:bg-amber-600 rounded font-black">
                         -
                       </button>
-                      <span className="px-2">{inCart.quantity}</span>
-                      <button onClick={() => handleQuantityChange(item.id, 1)} className="px-1 py-0.5 hover:bg-amber-600 rounded">
+                      <span className="px-1.5 font-extrabold">{inCart.quantity}</span>
+                      <button onClick={() => handleQuantityChange(item.id, 1)} className="px-1 py-0.5 hover:bg-amber-600 rounded font-black">
                         +
                       </button>
                     </div>
                   ) : (
                     <button
                       onClick={() => handleAddToCart(item)}
-                      className="bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-700 text-amber-400 font-bold text-xs px-3.5 py-1 rounded-lg transition"
+                      className="bg-slate-800 hover:bg-amber-500 hover:text-slate-950 border border-slate-700 text-amber-400 font-bold text-xs px-3 py-1 rounded-lg transition"
                     >
                       + ADD
                     </button>
@@ -376,31 +480,47 @@ function DineInContent() {
       {/* Floating Bottom Cart Bar */}
       {cart.length > 0 && (
         <div className="fixed bottom-4 left-4 right-4 max-w-xl mx-auto z-40">
-          <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-3.5 shadow-xl shadow-amber-500/20 flex items-center justify-between text-slate-950">
+          <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl p-3 sm:p-3.5 shadow-2xl shadow-amber-500/30 flex items-center justify-between text-slate-950">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-wider opacity-80">{totalItemCount} Items added</p>
-              <p className="font-black text-lg">₹{grandTotal}</p>
+              <p className="text-[10px] font-black uppercase tracking-wider opacity-90">{totalItemCount} Items selected</p>
+              <p className="font-black text-base sm:text-lg">₹{grandTotal}</p>
             </div>
             <button
-              onClick={() => setIsCheckoutOpen(true)}
-              className="bg-slate-950 hover:bg-slate-900 text-amber-400 font-extrabold text-sm px-5 py-2.5 rounded-xl shadow transition"
+              onClick={() => {
+                setPaymentStep("details");
+                setIsCheckoutOpen(true);
+              }}
+              className="bg-slate-950 hover:bg-slate-900 text-amber-400 font-extrabold text-xs sm:text-sm px-4 sm:px-5 py-2.5 rounded-xl shadow transition flex items-center gap-1.5"
             >
-              Pay & Place Order →
+              <span>Pay & Place Order</span>
+              <span>→</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* Checkout & Payment Modal */}
+      {/* Checkout & Payment Gateway Modal */}
       {isCheckoutOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
-                <h3 className="font-extrabold text-base text-amber-400">Checkout — {tableNumber}</h3>
-                <p className="text-xs text-slate-400">Complete payment to send order to kitchen</p>
+                <h3 className="font-extrabold text-base text-amber-400">
+                  {paymentStep === "details" ? `Checkout — ${tableNumber}` : "⚡ Merchant Payment Gateway"}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {paymentStep === "details"
+                    ? "Enter customer details to generate payment"
+                    : `Order Txn: ${paymentGatewayData?.txnId || ""}`}
+                </p>
               </div>
-              <button onClick={() => setIsCheckoutOpen(false)} className="text-slate-400 hover:text-white font-bold text-xl">
+              <button
+                onClick={() => {
+                  setIsCheckoutOpen(false);
+                  setPaymentStep("details");
+                }}
+                className="text-slate-400 hover:text-white font-bold text-xl"
+              >
                 ✕
               </button>
             </div>
@@ -421,10 +541,6 @@ function DineInContent() {
                   <span>Subtotal</span>
                   <span>₹{cartSubtotal}</span>
                 </div>
-                <div className="flex justify-between text-emerald-400">
-                  <span>Delivery Charge</span>
-                  <span>FREE</span>
-                </div>
                 {dineInConfig.dineInGstRate > 0 && (
                   <div className="flex justify-between">
                     <span>GST ({dineInConfig.dineInGstRate}%)</span>
@@ -432,77 +548,126 @@ function DineInContent() {
                   </div>
                 )}
                 <div className="flex justify-between text-white text-sm font-black pt-1 border-t border-slate-800">
-                  <span>Total Amount</span>
+                  <span>Total Payable</span>
                   <span className="text-amber-400">₹{grandTotal}</span>
                 </div>
               </div>
             </div>
 
-            {/* Customer Details & Pay-First Form */}
-            <form onSubmit={handlePlaceOrder} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Your Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Enter your name"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Mobile Phone Number</label>
-                <input
-                  type="tel"
-                  required
-                  placeholder="Enter 10-digit mobile number"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              {/* Payment Section */}
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 space-y-3">
-                <p className="text-xs font-bold text-amber-300">⚡ Pay-First Policy: Pay via UPI & Submit</p>
-
-                <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs">
-                  <div>
-                    <p className="text-slate-400 text-[10px]">UPI ID</p>
-                    <p className="font-extrabold text-amber-400">{dineInConfig.upiId}</p>
-                  </div>
-                  <a
-                    href={upiLink}
-                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-3 py-1.5 rounded-md text-[11px]"
-                  >
-                    Pay ₹{grandTotal} Now ↗
-                  </a>
+            {/* Step 1: Customer Details */}
+            {paymentStep === "details" && (
+              <form onSubmit={handleInitiatePaymentGateway} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Your Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter your name"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
                 </div>
 
                 <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Mobile Phone Number</label>
+                  <input
+                    type="tel"
+                    required
+                    placeholder="Enter 10-digit mobile number"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black py-3 rounded-xl shadow-lg transition flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? "Generating Payment QR..." : `Proceed to Pay ₹${grandTotal} →`}
+                </button>
+              </form>
+            )}
+
+            {/* Step 2: Auto-Generated Order Payment Gateway Screen */}
+            {paymentStep === "gateway" && paymentGatewayData && (
+              <div className="space-y-4">
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 text-center space-y-3">
+                  <span className="inline-block bg-amber-500 text-slate-950 text-[10px] font-black uppercase px-2 py-0.5 rounded-md">
+                    Order Payment Gateway
+                  </span>
+                  
+                  <h4 className="text-xl font-black text-amber-400">Total Payable: ₹{grandTotal}</h4>
+                  <p className="text-[11px] text-slate-400 font-mono">Txn ID: {paymentGatewayData.txnId}</p>
+
+                  {/* Auto-Generated Dynamic Order QR Code */}
+                  <div className="bg-white p-3 rounded-2xl shadow-xl inline-block mx-auto border-2 border-amber-400">
+                    <div dangerouslySetInnerHTML={{ __html: paymentGatewayData.qrCodeSvg }} />
+                    <p className="text-[10px] text-slate-800 font-extrabold mt-1 uppercase tracking-wider">
+                      Auto-Generated Order QR Code
+                    </p>
+                  </div>
+
+                  {/* Merchant Account Details */}
+                  <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-left space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 text-[10px]">Merchant UPI VPA</span>
+                      <span className="font-bold text-amber-400">{paymentGatewayData.upiId}</span>
+                    </div>
+                    {paymentGatewayData.bankDetails && (
+                      <div className="pt-1 border-t border-slate-800 text-[11px] text-slate-300 font-mono">
+                        <span className="text-slate-400 text-[10px] block">Bank Account:</span>
+                        {paymentGatewayData.bankDetails}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* One-Tap Pay Action Button */}
+                  <button
+                    type="button"
+                    onClick={() => handlePayClick(paymentGatewayData.upiUri)}
+                    className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl text-xs shadow transition flex items-center justify-center gap-1.5"
+                  >
+                    <span>⚡ Pay ₹{grandTotal} via GPay / PhonePe / Paytm</span>
+                    <span>↗</span>
+                  </button>
+                </div>
+
+                {/* UTR Input */}
+                <div>
                   <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                    Transaction Ref / UTR No. (Optional)
+                    Enter 12-Digit Payment UTR / Ref No. (Optional)
                   </label>
                   <input
                     type="text"
-                    placeholder="Enter 12-digit UTR or Payment Ref"
+                    placeholder="Enter 12-digit UTR or Transaction Ref"
                     value={utrReference}
                     onChange={(e) => setUtrReference(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
                   />
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-extrabold py-3 rounded-xl shadow-lg transition"
-              >
-                {isSubmitting ? "Sending to Kitchen..." : "Confirm & Send Order to Kitchen 👨‍🍳"}
-              </button>
-            </form>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentStep("details")}
+                    className="w-1/3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleFinalOrderSubmit}
+                    disabled={isSubmitting}
+                    className="w-2/3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 font-black py-2.5 rounded-xl text-xs shadow-lg transition"
+                  >
+                    {isSubmitting ? "Placing Order..." : "Confirm & Send to Kitchen 👨‍🍳"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
