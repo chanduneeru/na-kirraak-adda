@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import LocationPickerModal from "./components/LocationPickerModal";
 
 type MenuItem = {
   name: string;
@@ -160,6 +161,7 @@ export default function Home() {
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [locationStatus, setLocationStatus] = useState<string | null>(null);
   const [showEditDetails, setShowEditDetails] = useState(false);
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
 
   // Customer Menu Filter states
   const [vegFilter, setVegFilter] = useState<"all" | "veg" | "nonveg">("all");
@@ -531,8 +533,8 @@ export default function Home() {
 
   const handleProceedToCheckoutSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName || !phone || !address || !deliveryArea) {
-      setPopupMessage({ text: "Please fill in all checkout details including delivery area.", type: "error", title: "Missing Information" });
+    if (!customerName || !phone || !address) {
+      setPopupMessage({ text: "Please fill in your name, mobile number, and house address.", type: "error", title: "Missing Information" });
       return;
     }
 
@@ -952,36 +954,26 @@ export default function Home() {
                       required
                     />
                   </div>
-
-                  <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Delivery Area (Uppal & Surroundings)</label>
-                    <select
-                      value={deliveryArea}
-                      onChange={(e) => setDeliveryArea(e.target.value)}
-                      className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-sm text-white outline-none focus:border-orange-500"
-                      required
-                    >
-                      <option value="">Select your area</option>
-                      <option value="Uppal">Uppal</option>
-                      <option value="Ramanthapur">Ramanthapur</option>
-                      <option value="Nagole">Nagole</option>
-                      <option value="Habsiguda">Habsiguda</option>
-                      <option value="Boduppal">Boduppal</option>
-                      <option value="Nacharam">Nacharam</option>
-                      <option value="Tarnaka">Tarnaka</option>
-                      <option value="Chiluka Nagar">Chiluka Nagar</option>
-                    </select>
-                  </div>
                 </>
               )}
 
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">House Address / Landmark</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs text-zinc-400">House Address / Landmark</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsMapPickerOpen(true)}
+                    className="flex items-center gap-1 text-[11px] font-bold text-orange-400 hover:text-orange-300 bg-orange-500/10 px-2.5 py-1 rounded-lg border border-orange-500/30 transition shadow-sm"
+                  >
+                    <span>🗺️</span>
+                    <span>Pin House on Live Map</span>
+                  </button>
+                </div>
                 <textarea
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-sm text-white outline-none focus:border-orange-500 min-h-[60px]"
-                  placeholder="Flat No., House Name, Street"
+                  placeholder="Flat No., House Name, Street (or pin location on map above)"
                   required
                 />
               </div>
@@ -1520,6 +1512,13 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Interactive Leaflet + OpenStreetMap Live Location Pin Picker Modal */}
+      <LocationPickerModal
+        isOpen={isMapPickerOpen}
+        onClose={() => setIsMapPickerOpen(false)}
+        onSelectAddress={(data) => setAddress(data.address)}
+      />
       </footer>
     </div>
   );
