@@ -186,6 +186,13 @@ export default function Home() {
     bankDetails: "",
   });
 
+  // Custom In-App Alert Popup State (Replaces native browser alerts)
+  const [popupMessage, setPopupMessage] = useState<{
+    text: string;
+    type?: "error" | "success" | "info";
+    title?: string;
+  } | null>(null);
+
   const paymentOptions = useMemo(() => {
     const opts: string[] = [];
     if (gatewaySettings && gatewaySettings.enableUpi === true) opts.push("UPI");
@@ -525,7 +532,7 @@ export default function Home() {
   const handleProceedToCheckoutSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerName || !phone || !address || !deliveryArea) {
-      alert("Please fill in all checkout details including delivery area.");
+      setPopupMessage({ text: "Please fill in all checkout details including delivery area.", type: "error", title: "Missing Information" });
       return;
     }
 
@@ -562,7 +569,7 @@ export default function Home() {
       });
 
       if (response.ok) {
-        alert("Order placed successfully! NA KIRRAAK ADDA team will confirm your order shortly. 🎉");
+        setPopupMessage({ text: "Order placed successfully! NA KIRRAAK ADDA team will confirm your order shortly. 🎉", type: "success", title: "Order Placed 🎉" });
         setCartItems([]);
         setAppliedCoupon(null);
         setDiscountAmount(0);
@@ -572,10 +579,10 @@ export default function Home() {
         setPaymentModalOpen(false);
         setUpiUtrInput("");
       } else {
-        alert("Failed to place order. Please try again.");
+        setPopupMessage({ text: "Failed to place order. Please try again.", type: "error", title: "Order Failed" });
       }
     } catch (e) {
-      alert("Error placing order.");
+      setPopupMessage({ text: "Error placing order. Please try again.", type: "error", title: "Order Error" });
     }
   };
 
@@ -1488,6 +1495,31 @@ export default function Home() {
             </a>
           </p>
         </div>
+      {/* Custom In-App Alert Popup Modal (Replaces browser default alerts) */}
+      {popupMessage && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl text-center animate-in fade-in zoom-in duration-200">
+            <div className="w-12 h-12 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center mx-auto text-2xl">
+              {popupMessage.type === "error" ? "⚠️" : popupMessage.type === "success" ? "🎉" : "ℹ️"}
+            </div>
+            <div>
+              <h4 className="font-black text-base text-amber-400">
+                {popupMessage.title || (popupMessage.type === "error" ? "Notice" : "Success")}
+              </h4>
+              <p className="text-xs text-slate-300 mt-1.5 whitespace-pre-line leading-relaxed">
+                {popupMessage.text}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPopupMessage(null)}
+              className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black py-2.5 rounded-xl text-xs shadow transition"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
       </footer>
     </div>
   );

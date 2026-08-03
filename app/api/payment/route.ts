@@ -5,11 +5,22 @@ import { generateQRCodeSVG } from "@/lib/qr-generator";
 export async function GET() {
   try {
     const config = getPaytmConfig();
+    const merchantId = config.merchantId ? config.merchantId.trim() : "";
+    const merchantKey = config.merchantKey ? config.merchantKey.trim() : "";
+    const upiId = config.upiId ? config.upiId.trim() : "";
+    const isActive = Boolean(config.isActive);
+
     return NextResponse.json({
       success: true,
-      upiId: config.upiId || "9966533466@ybl",
-      merchantId: config.merchantId || "NAKIRRAAK_MERCHANT",
+      isActive,
+      hasCredentials: Boolean(merchantId && merchantKey),
+      upiId,
+      merchantId,
       bankDetails: config.bankDetails || "",
+      enableUpi: Boolean(config.enableUpi),
+      enableBank: Boolean(config.enableBank),
+      enableCard: Boolean(config.enableCard),
+      enableCod: Boolean(config.enableCod),
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -25,16 +36,45 @@ export async function POST(req: Request) {
     const tableNumber = body.tableNumber || "";
 
     const config = getPaytmConfig();
+    const isActive = Boolean(config.isActive);
+    const merchantId = config.merchantId ? config.merchantId.trim() : "";
+    const merchantKey = config.merchantKey ? config.merchantKey.trim() : "";
+    const upiId = config.upiId ? config.upiId.trim() : "";
 
-    const merchantId = config.merchantId || "NAKIRRAAK_MERCHANT";
-    const upiId = config.upiId || "9966533466@ybl";
+    // 1. If Paytm Business Gateway is enabled but credentials (MID & Secret Key) are missing in Admin:
+    if (isActive && (!merchantId || !merchantKey)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "No Payment Gateway configured. Please contact the restaurant admin to setup Paytm Business credentials.",
+          code: "NO_GATEWAY_CONFIGURED",
+        },
+        { status: 400 }
+      );
+    }
+
+    // 2. If Paytm is inactive and all manual payment options are also disabled:
+    const hasManualOptions = Boolean(config.enableUpi || config.enableBank || config.enableCard || config.enableCod);
+    if (!isActive && !hasManualOptions) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "No payment gateway or payment options are currently enabled by the admin. Please contact restaurant staff.",
+          code: "NO_PAYMENT_METHODS_ENABLED",
+        },
+        { status: 400 }
+      );
+    }
+
     const txnId = `TXN_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // Generate dynamic order-specific UPI URL for exact order amount
-    const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent("NA KIRRAAK ADDA")}&mc=5812&tid=${txnId}&tr=${txnId}&am=${amount}&cu=INR&tn=${encodeURIComponent(`DineIn ${tableNumber || ""} ${customerName || ""}`)}`;
+    let upiUri = "";
+    let qrCodeSvg = "";
 
-    // Generate dynamic QR Code SVG for this specific order
-    const qrCodeSvg = generateQRCodeSVG(upiUri, 200);
+    if (upiId) {
+      upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent("NA KIRRAAK ADDA")}&mc=5812&tid=${txnId}&tr=${txnId}&am=${amount}&cu=INR&tn=${encodeURIComponent(`DineIn ${tableNumber || ""} ${customerName || ""}`)}`;
+      qrCodeSvg = generateQRCodeSVG(upiUri, 200);
+    }
 
     return NextResponse.json({
       success: true,
@@ -44,6 +84,8 @@ export async function POST(req: Request) {
       upiUri,
       qrCodeSvg,
       merchantId,
+      isActive,
+      hasCredentials: Boolean(merchantId && merchantKey),
       bankDetails: config.bankDetails || "",
     });
   } catch (err: any) {

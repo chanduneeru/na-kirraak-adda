@@ -97,13 +97,15 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        alert("🎉 Password reset successfully! Please log in with your new password.");
-        setForgotModalOpen(false);
-        setResetStep(1);
-        setResetIdentifier("");
-        setOtpCodeInput("");
-        setResetNewPassword("");
-        setResetMsg("");
+        setResetMsg("🎉 Password reset successfully! Please log in with your new password.");
+        setTimeout(() => {
+          setForgotModalOpen(false);
+          setResetStep(1);
+          setResetIdentifier("");
+          setOtpCodeInput("");
+          setResetNewPassword("");
+          setResetMsg("");
+        }, 2000);
       } else {
         setResetMsg(data.error || "Failed to reset password.");
       }

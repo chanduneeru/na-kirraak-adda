@@ -558,13 +558,13 @@ export function getPaytmConfig(): any {
     merchantId: "",
     merchantKey: "",
     website: "DEFAULT",
-    upiId: "9966533466@ybl",
+    upiId: "",
     isActive: false,
-    enableUpi: true,
+    enableUpi: false,
     enableBank: false,
-    enableCard: true,
-    enableCod: true,
-    bankDetails: "State Bank of India | A/C: 1234567890 | IFSC: SBIN0001234 | Name: NA KIRRAAK ADDA",
+    enableCard: false,
+    enableCod: false,
+    bankDetails: "",
   };
 }
 

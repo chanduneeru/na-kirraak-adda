@@ -42,6 +42,7 @@ export default function AdminDashboard() {
 
   const [activeTab, setActiveTab] = useState<"products" | "orders" | "dinein" | "settings">("products");
   const [settingsSubTab, setSettingsSubTab] = useState<"categories" | "sound" | "paytm" | "employees" | "delivery" | "offers" | "email">("categories");
+  const [copiedMasterUrl, setCopiedMasterUrl] = useState(false);
 
   // Dine-In & Table State
   const [dineInConfig, setDineInConfig] = useState({
@@ -537,7 +538,6 @@ export default function AdminDashboard() {
 
   const exportOrdersToExcel = () => {
     if (orders.length === 0) {
-      alert("No orders available to export.");
       return;
     }
 
@@ -3036,11 +3036,12 @@ export default function AdminDashboard() {
                       onClick={() => {
                         const masterUrl = `${window.location.origin}/dine-in`;
                         navigator.clipboard.writeText(masterUrl);
-                        alert("✅ Master Dine-In URL copied to clipboard:\n" + masterUrl);
+                        setCopiedMasterUrl(true);
+                        setTimeout(() => setCopiedMasterUrl(false), 3000);
                       }}
                       className="bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl border border-white/10 transition"
                     >
-                      📋 Copy URL
+                      {copiedMasterUrl ? "✅ Copied!" : "📋 Copy URL"}
                     </button>
                     <a
                       href="/dine-in"
