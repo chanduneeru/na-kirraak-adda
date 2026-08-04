@@ -10,10 +10,12 @@ export async function GET() {
     const upiId = config.upiId ? config.upiId.trim() : "";
     const isActive = Boolean(config.isActive);
 
+    const hasCredentials = Boolean((merchantId && merchantKey) || upiId);
+
     return NextResponse.json({
       success: true,
       isActive,
-      hasCredentials: Boolean(merchantId && merchantKey),
+      hasCredentials,
       upiId,
       merchantId,
       bankDetails: config.bankDetails || "",
@@ -41,12 +43,14 @@ export async function POST(req: Request) {
     const merchantKey = config.merchantKey ? config.merchantKey.trim() : "";
     const upiId = config.upiId ? config.upiId.trim() : "";
 
-    // 1. If Paytm Business Gateway is enabled but credentials (MID & Secret Key) are missing in Admin:
-    if (isActive && (!merchantId || !merchantKey)) {
+    const hasCredentials = Boolean((merchantId && merchantKey) || upiId);
+
+    // 1. If Paytm Business Gateway is enabled but NO credentials (neither MID/Key nor Store UPI ID) are entered in Admin:
+    if (isActive && !hasCredentials) {
       return NextResponse.json(
         {
           success: false,
-          error: "No Payment Gateway configured. Please contact the restaurant admin to setup Paytm Business credentials.",
+          error: "No Payment Gateway configured. Please add Paytm Merchant Credentials (MID/Secret Key) OR Paytm Store UPI ID in Admin Panel.",
           code: "NO_GATEWAY_CONFIGURED",
         },
         { status: 400 }
@@ -85,7 +89,7 @@ export async function POST(req: Request) {
       qrCodeSvg,
       merchantId,
       isActive,
-      hasCredentials: Boolean(merchantId && merchantKey),
+      hasCredentials,
       bankDetails: config.bankDetails || "",
     });
   } catch (err: any) {

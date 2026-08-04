@@ -11,6 +11,9 @@ export async function GET() {
     const upiId = paytmConfig.upiId ? paytmConfig.upiId.trim() : "";
     const isActive = Boolean(paytmConfig.isActive);
 
+    // Count credentials as valid if EITHER (MID & Secret Key) OR (Store UPI ID / QR Link) is filled!
+    const hasCredentials = Boolean((merchantId && merchantKey) || upiId);
+
     return NextResponse.json({
       success: true,
       config,
@@ -21,13 +24,13 @@ export async function GET() {
       enableCard: Boolean(paytmConfig.enableCard),
       enableCod: Boolean(config.enableDineInCod || paytmConfig.enableCod),
       paytmActive: isActive,
-      paytmHasCredentials: Boolean(merchantId && merchantKey),
+      paytmHasCredentials: hasCredentials,
       paytmConfig: {
         merchantId,
         merchantKey,
         upiId,
         isActive,
-        hasCredentials: Boolean(merchantId && merchantKey),
+        hasCredentials,
       },
     });
   } catch (error: any) {

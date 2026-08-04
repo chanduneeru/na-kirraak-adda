@@ -2476,7 +2476,7 @@ export default function AdminDashboard() {
                 <span>💳</span> Paytm Business Account Credentials
               </h2>
               <p className="text-xs text-zinc-400">
-                Configure your official Paytm Merchant credentials here. You can fill or update your Paytm MID and Secret Key anytime!
+                Configure your official Paytm Merchant credentials here. You can fill <strong>Option A (Paytm MID & Secret Key)</strong> OR <strong>Option B (Paytm Store UPI ID / QR Link)</strong> — filling either option activates payments for your customers!
               </p>
 
               {paytmSaveMsg && (
@@ -2486,49 +2486,62 @@ export default function AdminDashboard() {
               )}
 
               <form onSubmit={handleSavePaytmConfig} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">Paytm Merchant ID (MID)</label>
-                  <input
-                    type="text"
-                    value={paytmConfig.merchantId}
-                    onChange={(e) => setPaytmConfig({ ...paytmConfig, merchantId: e.target.value })}
-                    placeholder="Enter your Paytm Merchant ID (e.g. NA_KIRRAAK_MID_123)"
-                    className="w-full rounded-xl border border-white/10 bg-black/60 px-4 py-2.5 text-xs text-white outline-none focus:border-orange-500 font-mono"
-                  />
+                <div className="bg-black/40 border border-white/10 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-orange-500/20 text-orange-300 text-[10px] font-black px-2 py-0.5 rounded uppercase">Option A</span>
+                    <h4 className="text-xs font-bold text-white">Paytm Merchant API Keys</h4>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-400 mb-1">Paytm Merchant ID (MID)</label>
+                    <input
+                      type="text"
+                      value={paytmConfig.merchantId}
+                      onChange={(e) => setPaytmConfig({ ...paytmConfig, merchantId: e.target.value })}
+                      placeholder="Enter your Paytm Merchant ID (e.g. NA_KIRRAAK_MID_123)"
+                      className="w-full rounded-xl border border-white/10 bg-black/60 px-4 py-2.5 text-xs text-white outline-none focus:border-orange-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-400 mb-1">Paytm Merchant Key (Secret Key)</label>
+                    <input
+                      type="password"
+                      value={paytmConfig.merchantKey}
+                      onChange={(e) => setPaytmConfig({ ...paytmConfig, merchantKey: e.target.value })}
+                      placeholder="Enter your Paytm Secret Merchant Key"
+                      className="w-full rounded-xl border border-white/10 bg-black/60 px-4 py-2.5 text-xs text-white outline-none focus:border-orange-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-400 mb-1">Paytm Website Mode</label>
+                    <select
+                      value={paytmConfig.website}
+                      onChange={(e) => setPaytmConfig({ ...paytmConfig, website: e.target.value })}
+                      className="w-full rounded-xl border border-white/10 bg-black/60 px-4 py-2.5 text-xs text-white outline-none focus:border-orange-500"
+                    >
+                      <option value="DEFAULT">DEFAULT (Production Live)</option>
+                      <option value="WEBSTAGING">WEBSTAGING (Sandbox Testing)</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">Paytm Merchant Key (Secret Key)</label>
-                  <input
-                    type="password"
-                    value={paytmConfig.merchantKey}
-                    onChange={(e) => setPaytmConfig({ ...paytmConfig, merchantKey: e.target.value })}
-                    placeholder="Enter your Paytm Secret Merchant Key"
-                    className="w-full rounded-xl border border-white/10 bg-black/60 px-4 py-2.5 text-xs text-white outline-none focus:border-orange-500 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">Paytm Website Mode</label>
-                  <select
-                    value={paytmConfig.website}
-                    onChange={(e) => setPaytmConfig({ ...paytmConfig, website: e.target.value })}
-                    className="w-full rounded-xl border border-white/10 bg-black/60 px-4 py-2.5 text-xs text-white outline-none focus:border-orange-500"
-                  >
-                    <option value="DEFAULT">DEFAULT (Production Live)</option>
-                    <option value="WEBSTAGING">WEBSTAGING (Sandbox Testing)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">Paytm Business Store UPI ID / QR Link</label>
-                  <input
-                    type="text"
-                    value={paytmConfig.upiId}
-                    onChange={(e) => setPaytmConfig({ ...paytmConfig, upiId: e.target.value })}
-                    placeholder="9966533466@paytm or nakirraakadda@paytm"
-                    className="w-full rounded-xl border border-white/10 bg-black/60 px-4 py-2.5 text-xs text-white outline-none focus:border-orange-500 font-mono"
-                  />
+                <div className="bg-black/40 border border-white/10 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-black px-2 py-0.5 rounded uppercase">Option B (Direct & Fast)</span>
+                    <h4 className="text-xs font-bold text-white">Paytm Business Store UPI ID / QR Link</h4>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-400 mb-1">Paytm Store VPA / UPI ID</label>
+                    <input
+                      type="text"
+                      value={paytmConfig.upiId}
+                      onChange={(e) => setPaytmConfig({ ...paytmConfig, upiId: e.target.value })}
+                      placeholder="9966533466@paytm or nakirraakadda@paytm"
+                      className="w-full rounded-xl border border-white/10 bg-black/60 px-4 py-2.5 text-xs text-white outline-none focus:border-orange-500 font-mono"
+                    />
+                    <p className="text-[10px] text-zinc-400 mt-1">💡 Enter your shop's official Paytm Business UPI ID to generate instant order payment QR codes!</p>
+                  </div>
                 </div>
 
                 {/* Individual Payment Gateway Toggles */}
