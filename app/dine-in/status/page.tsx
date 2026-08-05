@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -38,6 +38,30 @@ function DineInStatusContent() {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [chatNotification, setChatNotification] = useState<string | null>(null);
+  const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null);
+  const prevChatCountRef = useRef<number>(0);
+  const isFirstChatLoadRef = useRef<boolean>(true);
+
+  const playChatChimeSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, now); // D5
+      osc.frequency.setValueAtTime(880, now + 0.12); // A5
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.6);
+    } catch (e) {}
+  };
 
   const fetchOrder = () => {
     if (!orderId) {
@@ -49,6 +73,25 @@ function DineInStatusContent() {
       .then((data) => {
         if (data.success && data.order) {
           setOrder(data.order);
+
+          // Check for new chat messages from staff
+          const chatList = typeof data.order.chatMessages === "string" 
+            ? JSON.parse(data.order.chatMessages || "[]") 
+            : (data.order.chatMessages || []);
+
+          if (Array.isArray(chatList)) {
+            if (!isFirstChatLoadRef.current && chatList.length > prevChatCountRef.current) {
+              const latestMsg = chatList[chatList.length - 1];
+              if (latestMsg && latestMsg.sender === "admin") {
+                setChatNotification(`💬 New Message from Store Staff: "${latestMsg.text}"`);
+                playChatChimeSound();
+                setTimeout(() => setChatNotification(null), 7000);
+              }
+            }
+            prevChatCountRef.current = chatList.length;
+            isFirstChatLoadRef.current = false;
+          }
+
           // Auto-trigger In-App Review Popup Modal when staff confirms order or verifies payment
           const isConfirmed = data.order.paymentStatus === "verified" || data.order.status === "Preparing" || data.order.status === "Ready" || data.order.status === "Completed";
           const alreadyReviewed = typeof window !== "undefined" && localStorage.getItem(`reviewed_order_${orderId}`);
@@ -93,6 +136,28 @@ function DineInStatusContent() {
     }
   };
 
+  const handleUploadChatScreenshot = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !orderId) return;
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64Image = reader.result as string;
+      try {
+        await fetch(`/api/orders/${orderId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "upload_screenshot",
+            paymentScreenshot: base64Image,
+          }),
+        });
+        fetchOrder();
+      } catch (err) {}
+    };
+    reader.readAsDataURL(file);
+  };
+
   const parsedItems = order
     ? typeof order.items === "string"
       ? JSON.parse(order.items)
@@ -117,6 +182,23 @@ function DineInStatusContent() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 font-sans max-w-2xl mx-auto flex flex-col justify-between">
+      {/* Floating Real-Time Chat Notification Toast */}
+      {chatNotification && (
+        <div
+          onClick={() => {
+            document.getElementById("cod-chat-box")?.scrollIntoView({ behavior: "smooth" });
+            setChatNotification(null);
+          }}
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-[110] bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 px-5 py-3 rounded-2xl font-black text-xs shadow-2xl border border-amber-300 animate-in slide-in-from-top duration-300 flex items-center gap-2 cursor-pointer hover:scale-105 transition"
+        >
+          <span>🔔</span>
+          <span>{chatNotification}</span>
+          <span className="ml-2 bg-slate-950 text-amber-400 font-extrabold px-2 py-0.5 rounded-lg text-[10px]">
+            View Chat 👇
+          </span>
+        </div>
+      )}
+
       <div className="space-y-6 pt-4">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -138,13 +220,23 @@ function DineInStatusContent() {
         {/* Payment Verification Status Card */}
         {order && (
           <div className="rounded-2xl border p-4 shadow-xl space-y-2 text-xs transition">
-            {order.status === "Awaiting Call Confirmation" || order.paymentStatus === "Pending COD Confirmation" ? (
+            {order.status === "Awaiting Call Confirmation" || order.paymentStatus === "Pending COD Confirmation" || order.paymentMethod?.includes("Cash on Delivery") ? (
               <div className="bg-orange-500/10 border-orange-500/30 text-orange-300 p-3.5 rounded-xl border flex items-center gap-3">
                 <span className="text-2xl animate-pulse">📞</span>
                 <div>
-                  <h4 className="font-bold text-orange-400 text-sm">Awaiting Phone Call Confirmation</h4>
+                  <h4 className="font-bold text-orange-400 text-sm">⏳ Order Placed — Pending Staff Confirmation</h4>
                   <p className="text-[11px] text-slate-300">
-                    Restaurant staff will call your phone (<strong>{order.phone}</strong>) shortly to confirm your order details before kitchen cooking starts!
+                    Please wait while restaurant staff confirms your order details. You can chat with store staff below!
+                  </p>
+                </div>
+              </div>
+            ) : order.paymentStatus === "Paid via Paytm Gateway" || order.paymentStatus === "verified" ? (
+              <div className="bg-emerald-500/10 border-emerald-500/30 text-emerald-300 p-3.5 rounded-xl border flex items-center gap-3">
+                <span className="text-2xl">✅</span>
+                <div>
+                  <h4 className="font-bold text-emerald-400 text-sm">✅ Order Placed & Paid via Paytm Gateway</h4>
+                  <p className="text-[11px] text-slate-300">
+                    Kitchen staff has received your order & cooking starts now!
                   </p>
                 </div>
               </div>
@@ -154,17 +246,7 @@ function DineInStatusContent() {
                 <div>
                   <h4 className="font-bold text-amber-400 text-sm">Payment Verification Pending</h4>
                   <p className="text-[11px] text-slate-300">
-                    Store staff is verifying your payment UTR / screenshot. Cooking starts as soon as verified!
-                  </p>
-                </div>
-              </div>
-            ) : order.paymentStatus === "verified" ? (
-              <div className="bg-emerald-500/10 border-emerald-500/30 text-emerald-300 p-3.5 rounded-xl border flex items-center gap-3">
-                <span className="text-2xl">✅</span>
-                <div>
-                  <h4 className="font-bold text-emerald-400 text-sm">Payment Confirmed & Verified</h4>
-                  <p className="text-[11px] text-slate-300">
-                    Thank you! Your payment has been verified by kitchen staff.
+                    Store staff is verifying your payment. Cooking starts as soon as verified!
                   </p>
                 </div>
               </div>
@@ -172,10 +254,10 @@ function DineInStatusContent() {
               <div className="bg-red-500/15 border-red-500/40 text-red-300 p-3.5 rounded-xl border space-y-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-2xl">❌</span>
-                  <h4 className="font-bold text-red-400 text-sm">Payment Declined</h4>
+                  <h4 className="font-bold text-red-400 text-sm">Order Declined</h4>
                 </div>
                 <p className="text-[11px] text-slate-200">
-                  Reason: <strong>{order.declineReason || "Payment details could not be verified."}</strong>
+                  Reason: <strong>{order.declineReason || "Order details could not be confirmed."}</strong>
                 </p>
               </div>
             ) : null}
@@ -188,8 +270,12 @@ function DineInStatusContent() {
 
           <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-bold">
             <div className={`p-2 rounded-xl border ${currentStep >= 1 ? "bg-amber-500/20 border-amber-500/50 text-amber-300" : "bg-slate-950 border-slate-800 text-slate-600"}`}>
-              <div className="text-lg">💳</div>
-              <div>Order Paid</div>
+              <div className="text-lg">
+                {order?.paymentMethod?.includes("Cash on Delivery") ? "💵" : "⚡"}
+              </div>
+              <div>
+                {order?.paymentMethod?.includes("Cash on Delivery") ? "COD Order" : "Paid Online"}
+              </div>
             </div>
             <div className={`p-2 rounded-xl border ${currentStep >= 2 ? "bg-amber-500/20 border-amber-500/50 text-amber-300" : "bg-slate-950 border-slate-800 text-slate-600"}`}>
               <div className="text-lg">👨‍🍳</div>
@@ -213,7 +299,103 @@ function DineInStatusContent() {
           </div>
         </div>
 
+        {/* Dedicated Live Chat Box for COD Orders */}
+        {(order?.status === "Awaiting Call Confirmation" || order?.paymentStatus === "Pending COD Confirmation" || order?.paymentMethod?.includes("Cash on Delivery")) && (
+          <div id="cod-chat-box" className="bg-slate-900 border border-orange-500/40 rounded-2xl p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h2 className="text-sm font-bold text-orange-400 flex items-center gap-1.5">
+                  <span>💬</span> COD Order Staff & Customer Chat
+                </h2>
+                <p className="text-[10px] text-slate-400">Communicate with restaurant staff to confirm your COD order details</p>
+              </div>
+              <span className="text-[10px] bg-orange-500/20 text-orange-300 border border-orange-500/40 px-2.5 py-0.5 rounded-full font-black uppercase">
+                Live Chat
+              </span>
+            </div>
 
+            {/* Message Log */}
+            <div className="space-y-2.5 max-h-60 overflow-y-auto p-3 bg-slate-950 rounded-xl border border-slate-800/80">
+              {parsedChat.length === 0 ? (
+                <div className="text-center py-6 text-slate-500 text-xs italic">
+                  No messages yet. Send a message below to chat with store staff!
+                </div>
+              ) : (
+                parsedChat.map((msg: any, idx: number) => (
+                  <div
+                    key={msg.id || idx}
+                    className={`flex flex-col ${msg.sender === "customer" ? "items-end" : "items-start"}`}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
+                        msg.sender === "customer"
+                          ? "bg-amber-500 text-slate-950 font-semibold rounded-br-none shadow"
+                          : "bg-slate-800 text-slate-100 rounded-bl-none border border-slate-700 font-medium"
+                      }`}
+                    >
+                      <p>{msg.text}</p>
+                      {(msg.imageUrl || (order?.paymentScreenshot && msg.text.includes("payment screenshot"))) && (
+                        <div className="mt-2 pt-1 border-t border-white/20">
+                          <img
+                            src={msg.imageUrl || order?.paymentScreenshot}
+                            alt="Receipt Screenshot"
+                            className="max-w-full max-h-48 rounded-xl border border-white/30 object-cover cursor-pointer hover:opacity-90 transition shadow-lg"
+                            onClick={() => setPreviewScreenshotUrl(msg.imageUrl || order?.paymentScreenshot)}
+                          />
+                          <p className="text-[10px] font-bold text-amber-300 mt-1 flex items-center gap-1 cursor-pointer" onClick={() => setPreviewScreenshotUrl(msg.imageUrl || order?.paymentScreenshot)}>
+                            <span>🔍</span> Click image to view full screen
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[9px] text-slate-500 mt-1 px-1">
+                      {msg.sender === "customer" ? "You" : "Store Staff"} •{" "}
+                      {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Chat Input Form */}
+            <form onSubmit={handleSendCustomerMessage} className="space-y-2 pt-1">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Type message to restaurant staff..."
+                  value={customerMsgInput}
+                  onChange={(e) => setCustomerMsgInput(e.target.value)}
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-500"
+                />
+                <button
+                  type="submit"
+                  disabled={isSendingMsg || !customerMsgInput.trim()}
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs shadow transition disabled:opacity-50"
+                >
+                  Send 📤
+                </button>
+              </div>
+
+              {/* Upload Screenshot Option in Chat */}
+              <div className="flex items-center justify-between bg-black/40 p-2.5 rounded-xl border border-white/10 text-[11px]">
+                <span className="text-slate-400 font-medium">📸 Need to send a receipt screenshot?</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleUploadChatScreenshot}
+                  className="hidden"
+                  id="chat-screenshot-input"
+                />
+                <label
+                  htmlFor="chat-screenshot-input"
+                  className="bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold px-3 py-1 rounded-lg cursor-pointer text-[10px] border border-white/10 transition"
+                >
+                  Attach Image 📎
+                </label>
+              </div>
+            </form>
+          </div>
+        )}
 
         {/* Order Items List */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3 shadow-xl">
@@ -340,6 +522,23 @@ function DineInStatusContent() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Full Screen Image Lightbox Modal */}
+      {previewScreenshotUrl && (
+        <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4">
+          <button
+            onClick={() => setPreviewScreenshotUrl(null)}
+            className="absolute top-4 right-4 text-white hover:text-amber-400 text-2xl font-black bg-slate-900/80 px-4 py-2 rounded-full border border-white/20 shadow-xl"
+          >
+            ✕ Close
+          </button>
+          <img
+            src={previewScreenshotUrl}
+            alt="Payment Screenshot / Receipt"
+            className="max-w-full max-h-[85vh] rounded-2xl object-contain border border-white/20 shadow-2xl"
+          />
         </div>
       )}
     </div>

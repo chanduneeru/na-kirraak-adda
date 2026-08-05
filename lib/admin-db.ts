@@ -547,7 +547,7 @@ export function updateOrderPaymentVerification(id: string, paymentStatus: 'verif
   return true;
 }
 
-export function addOrderChatMessage(id: string, sender: 'customer' | 'admin', text: string): any {
+export function addOrderChatMessage(id: string, sender: 'customer' | 'admin', text: string, imageUrl?: string): any {
   const order = getOrder(id);
   if (!order) return null;
 
@@ -562,6 +562,7 @@ export function addOrderChatMessage(id: string, sender: 'customer' | 'admin', te
     id: `msg_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
     sender,
     text,
+    imageUrl: imageUrl || '',
     timestamp: Date.now(),
   };
 

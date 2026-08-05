@@ -188,6 +188,9 @@ export default function AdminDashboard() {
   const [declineModalOrder, setDeclineModalOrder] = useState<any>(null);
   const [declineReasonInput, setDeclineReasonInput] = useState<string>("");
   const [adminChatMessage, setAdminChatMessage] = useState<string>("");
+  const [adminChatToast, setAdminChatToast] = useState<string | null>(null);
+  const [adminChatToastOrderId, setAdminChatToastOrderId] = useState<string | null>(null);
+  const prevAdminChatMapRef = useRef<Record<string, number>>({});
 
   const handleVerifyPayment = async (orderId: string) => {
     try {
@@ -933,6 +936,25 @@ export default function AdminDashboard() {
             }
           }
           prevOrderIdsRef.current = currentIds;
+
+          // Check for incoming customer messages
+          data.forEach((o: any) => {
+            const chatList = typeof o.chatMessages === "string" ? JSON.parse(o.chatMessages || "[]") : (o.chatMessages || []);
+            if (Array.isArray(chatList)) {
+              const prevCount = prevAdminChatMapRef.current[o.id] || 0;
+              if (!isFirstOrderLoadRef.current && chatList.length > prevCount) {
+                const latest = chatList[chatList.length - 1];
+                if (latest && latest.sender === "customer") {
+                  setAdminChatToast(`💬 New COD Chat Message from ${o.customerName || "Customer"} (${o.phone}): "${latest.text}"`);
+                  setAdminChatToastOrderId(o.id);
+                  playOrderChimeSound();
+                  setTimeout(() => setAdminChatToast(null), 7000);
+                }
+              }
+              prevAdminChatMapRef.current[o.id] = chatList.length;
+            }
+          });
+
           isFirstOrderLoadRef.current = false;
         }
       }
@@ -1114,6 +1136,25 @@ export default function AdminDashboard() {
       )}
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {/* Real-Time Floating Customer Chat Notification Toast */}
+        {adminChatToast && (
+          <div
+            onClick={() => {
+              if (adminChatToastOrderId) {
+                fetchOrderChat(adminChatToastOrderId);
+                setAdminChatToast(null);
+              }
+            }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[110] bg-gradient-to-r from-orange-500 to-amber-500 text-slate-950 px-6 py-3.5 rounded-2xl font-black text-xs shadow-2xl border border-orange-300 animate-in slide-in-from-top duration-300 flex items-center gap-2 cursor-pointer hover:scale-105 transition"
+          >
+            <span>💬</span>
+            <span>{adminChatToast}</span>
+            <span className="ml-2 bg-slate-950 text-amber-400 font-extrabold px-2.5 py-1 rounded-xl text-[10px] shadow">
+              Click to Open Chat 💬
+            </span>
+          </div>
+        )}
+
         {/* Admin Order & Sales Analytics Metric Bar + Download Excel Button */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
           <h2 className="text-xl font-black text-white flex items-center gap-2">
@@ -1217,7 +1258,11 @@ export default function AdminDashboard() {
           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-center space-y-1 shadow-xl">
             <span className="text-xl">❌</span>
             <p className="text-2xl font-black text-red-400">
-              {orders.filter((o) => o.status.toLowerCase().includes("cancel")).length + dailyOffsets.cancelledOrdersOffset}
+              {orders.filter((o) => {
+                const s = (o.status || "").toLowerCase();
+                const ps = ((o as any).paymentStatus || "").toLowerCase();
+                return s.includes("cancel") || s.includes("decline") || ps.includes("decline") || ps.includes("cancel");
+              }).length + dailyOffsets.cancelledOrdersOffset}
             </p>
             <p className="text-[11px] font-extrabold uppercase text-red-400">Cancelled Orders</p>
           </div>
@@ -1226,7 +1271,15 @@ export default function AdminDashboard() {
             <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center space-y-1 shadow-xl">
               <span className="text-xl">💰</span>
               <p className="text-2xl font-black text-emerald-400">
-                ₹{(orders.reduce((acc, o) => acc + (Number(o.total) || 0), 0) + dailyOffsets.revenueOffset).toFixed(0)}
+                ₹{(
+                  orders
+                    .filter((o) => {
+                      const s = (o.status || "").toLowerCase();
+                      const ps = ((o as any).paymentStatus || "").toLowerCase();
+                      return !s.includes("cancel") && !s.includes("decline") && !ps.includes("decline") && !ps.includes("cancel");
+                    })
+                    .reduce((acc, o) => acc + (Number(o.total) || 0), 0) + dailyOffsets.revenueOffset
+                ).toFixed(0)}
               </p>
               <p className="text-[11px] font-extrabold uppercase text-emerald-300">Total Sales (Revenue)</p>
             </div>
@@ -3486,6 +3539,20 @@ export default function AdminDashboard() {
                       }`}
                     >
                       <p>{msg.text}</p>
+
+                      {(msg.imageUrl || (activeChatOrder.paymentScreenshot && msg.text.includes("payment screenshot"))) && (
+                        <div className="mt-2 pt-1 border-t border-white/20">
+                          <img
+                            src={msg.imageUrl || activeChatOrder.paymentScreenshot}
+                            alt="Receipt Screenshot"
+                            className="max-w-full max-h-48 rounded-xl border border-white/30 object-cover cursor-pointer hover:opacity-90 transition shadow-lg"
+                            onClick={() => setPreviewScreenshotUrl(msg.imageUrl || activeChatOrder.paymentScreenshot)}
+                          />
+                          <p className="text-[10px] font-bold text-amber-300 mt-1 flex items-center gap-1 cursor-pointer" onClick={() => setPreviewScreenshotUrl(msg.imageUrl || activeChatOrder.paymentScreenshot)}>
+                            <span>🔍</span> Click image to view full screen
+                          </p>
+                        </div>
+                      )}
                     </div>
                     <span className="text-[9px] text-zinc-500 mt-1 px-1">
                       {msg.sender === "admin" ? "Store Staff" : activeChatOrder.customerName} • {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just Now"}

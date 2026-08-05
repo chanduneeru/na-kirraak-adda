@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import LocationPickerModal from "./components/LocationPickerModal";
 
 type MenuItem = {
@@ -142,6 +143,7 @@ function MenuSection({
 }
 
 export default function Home() {
+  const router = useRouter();
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [customerName, setCustomerName] = useState("");
@@ -550,6 +552,25 @@ export default function Home() {
 
   const placeOrder = async () => {
     try {
+      if (!loggedInUser) {
+        setPopupMessage({
+          text: "Please log in or create an account before placing your delivery order so we can contact you with live updates!",
+          type: "error",
+          title: "Login Required for Online Delivery 🔒",
+        });
+        setTimeout(() => router.push("/auth/login"), 1500);
+        return;
+      }
+
+      if (!/^\d{10}$/.test(phone.trim())) {
+        setPopupMessage({
+          text: "Please enter a valid 10-digit mobile number (e.g. 9876543210).",
+          type: "error",
+          title: "Invalid Phone Number 📱",
+        });
+        return;
+      }
+
       // Block order placement if Paytm Merchant Gateway is selected but missing credentials in Admin
       const hasValidMerchantGateway = Boolean(gatewaySettings?.hasCredentials || gatewaySettings?.paytmActive || gatewaySettings?.merchantId);
       if (paymentMethod !== "Cash on Delivery" && !hasValidMerchantGateway) {
@@ -557,15 +578,6 @@ export default function Home() {
           text: "Cannot place order: Paytm Merchant Business Gateway credentials (MID & Secret Key) have not been added in the Admin Panel yet!\n\nPlease contact restaurant staff or select Cash on Delivery.",
           type: "error",
           title: "No Active Payment Gateway ⚠️",
-        });
-        return;
-      }
-
-      if (paymentMethod !== "Cash on Delivery" && !paymentScreenshot) {
-        setPopupMessage({
-          text: "Please upload your payment receipt screenshot before submitting your order! Our admin team will verify the receipt image to confirm your order.",
-          type: "error",
-          title: "Payment Receipt Screenshot Required 📸",
         });
         return;
       }
@@ -590,7 +602,7 @@ export default function Home() {
           couponCode: appliedCoupon?.code || "",
           deviceId: deviceId,
           paymentMethod: `${paymentMethod} [${finalPaymentStatus}]`,
-          paymentStatus: paymentMethod === "Cash on Delivery" ? "Pending COD Confirmation" : "pending",
+          paymentStatus: paymentMethod === "Cash on Delivery" ? "Pending COD Confirmation" : "Paid via Paytm Gateway",
           paymentScreenshot: paymentScreenshot,
           upiUtrInput: upiUtrInput,
         }),
@@ -979,13 +991,14 @@ export default function Home() {
                   </div>
 
                   <div>
-                    <label className="block text-xs text-zinc-400 mb-1">Phone Number</label>
+                    <label className="block text-xs text-zinc-400 mb-1">Phone Number (10 Digits)</label>
                     <input
                       type="tel"
+                      maxLength={10}
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-sm text-white outline-none focus:border-orange-500"
-                      placeholder="10-digit mobile number"
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                      className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-sm text-white outline-none focus:border-orange-500 font-mono tracking-wider"
+                      placeholder="e.g. 9876543210"
                       required
                     />
                   </div>

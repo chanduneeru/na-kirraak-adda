@@ -193,6 +193,10 @@ function DineInContent() {
       showAlert("Please enter your Name and Mobile Number", "error", "Input Required");
       return;
     }
+    if (!/^\d{10}$/.test(phone.trim())) {
+      showAlert("Mobile phone number must be exactly 10 digits (e.g. 9876543210)", "error", "Invalid Phone Number 📱");
+      return;
+    }
     if (cart.length === 0) {
       showAlert("Your cart is empty", "error", "Cart Empty");
       return;
@@ -249,6 +253,10 @@ function DineInContent() {
       showAlert("Please enter your Name and Mobile Number", "error", "Input Required");
       return;
     }
+    if (!/^\d{10}$/.test(phone.trim())) {
+      showAlert("Mobile phone number must be exactly 10 digits (e.g. 9876543210)", "error", "Invalid Phone Number 📱");
+      return;
+    }
     if (cart.length === 0) {
       showAlert("Your cart is empty", "error", "Cart Empty");
       return;
@@ -284,11 +292,6 @@ function DineInContent() {
 
   // Step 2: Confirm Order after payment completion
   const handleFinalOrderSubmit = async () => {
-    if (!paymentScreenshot) {
-      showAlert("Please upload your payment receipt screenshot before submitting your order! Our admin team will verify the receipt image to confirm your order.", "error", "Payment Receipt Screenshot Required 📸");
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
@@ -308,8 +311,9 @@ function DineInContent() {
         gst: gstAmount,
         deliveryCharge: 0,
         grandTotal: grandTotal,
-        paymentMethod: `Paytm Business Gateway (Txn: ${paymentGatewayData?.txnId || "Paid"}${utrReference ? `, Ref: ${utrReference}` : ""})`,
-        paymentStatus: paymentScreenshot || utrReference ? "pending" : "completed",
+        paymentMethod: `Paytm Business Gateway (Txn: ${paymentGatewayData?.txnId || "Paid"})`,
+        paymentStatus: "Paid via Paytm Gateway",
+        status: "Received",
         paymentScreenshot: paymentScreenshot,
         upiUtrInput: utrReference,
       };
@@ -742,14 +746,15 @@ function DineInContent() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Mobile Phone Number</label>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Mobile Phone Number (10 Digits)</label>
                       <input
                         type="tel"
+                        maxLength={10}
                         required
-                        placeholder="Enter 10-digit mobile number"
+                        placeholder="e.g. 9876543210"
                         value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono tracking-wider"
                       />
                     </div>
 

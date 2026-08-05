@@ -86,7 +86,7 @@ export async function PUT(
         return NextResponse.json({ success: false, error: "No screenshot or UTR provided" }, { status: 400 });
       }
       updateOrderPaymentScreenshot(id, screenshot, upiUtrInput);
-      addOrderChatMessage(id, "customer", `📷 Sent updated payment screenshot/receipt (UTR: ${upiUtrInput || "N/A"})`);
+      addOrderChatMessage(id, "customer", `📷 Sent updated payment screenshot/receipt (UTR: ${upiUtrInput || "N/A"})`, screenshot);
       return NextResponse.json({ success: true, message: "Payment screenshot updated" });
     }
 
