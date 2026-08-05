@@ -175,6 +175,7 @@ export default function Home() {
   // Online UPI & Card Pre-Payment Modal states
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [upiUtrInput, setUpiUtrInput] = useState("");
+  const [paymentScreenshot, setPaymentScreenshot] = useState("");
   const [cardNumberInput, setCardNumberInput] = useState("");
   const [cardExpiryInput, setCardExpiryInput] = useState("");
   const [cardCvvInput, setCardCvvInput] = useState("");
@@ -193,14 +194,16 @@ export default function Home() {
     text: string;
     type?: "error" | "success" | "info";
     title?: string;
+    actionUrl?: string;
+    actionLabel?: string;
   } | null>(null);
 
   const paymentOptions = useMemo(() => {
     const opts: string[] = [];
-    if (gatewaySettings && gatewaySettings.enableUpi === true) opts.push("UPI");
-    if (gatewaySettings && gatewaySettings.enableBank === true) opts.push("Bank Transfer");
-    if (gatewaySettings && gatewaySettings.enableCard !== false) opts.push("Card (Credit/Debit)");
-    if (gatewaySettings && gatewaySettings.enableCod !== false) opts.push("Cash on Delivery");
+    opts.push("Paytm Business Gateway");
+    if (gatewaySettings && (gatewaySettings.enableCod === true || gatewaySettings.enableCod === 1)) {
+      opts.push("Cash on Delivery");
+    }
     return opts;
   }, [gatewaySettings]);
 
@@ -547,9 +550,29 @@ export default function Home() {
 
   const placeOrder = async () => {
     try {
+      // Block order placement if Paytm Merchant Gateway is selected but missing credentials in Admin
+      const hasValidMerchantGateway = Boolean(gatewaySettings?.hasCredentials || gatewaySettings?.paytmActive || gatewaySettings?.merchantId);
+      if (paymentMethod !== "Cash on Delivery" && !hasValidMerchantGateway) {
+        setPopupMessage({
+          text: "Cannot place order: Paytm Merchant Business Gateway credentials (MID & Secret Key) have not been added in the Admin Panel yet!\n\nPlease contact restaurant staff or select Cash on Delivery.",
+          type: "error",
+          title: "No Active Payment Gateway ⚠️",
+        });
+        return;
+      }
+
+      if (paymentMethod !== "Cash on Delivery" && !paymentScreenshot) {
+        setPopupMessage({
+          text: "Please upload your payment receipt screenshot before submitting your order! Our admin team will verify the receipt image to confirm your order.",
+          type: "error",
+          title: "Payment Receipt Screenshot Required 📸",
+        });
+        return;
+      }
+
       const finalPaymentStatus = paymentMethod === "Cash on Delivery"
-        ? "Pending COD"
-        : `Paid via UPI (Ref UTR: ${upiUtrInput || "Online Payment"})`;
+        ? "Pending COD Confirmation"
+        : "Paytm Merchant Gateway";
 
       const response = await fetch("/api/orders", {
         method: "POST",
@@ -567,6 +590,9 @@ export default function Home() {
           couponCode: appliedCoupon?.code || "",
           deviceId: deviceId,
           paymentMethod: `${paymentMethod} [${finalPaymentStatus}]`,
+          paymentStatus: paymentMethod === "Cash on Delivery" ? "Pending COD Confirmation" : "pending",
+          paymentScreenshot: paymentScreenshot,
+          upiUtrInput: upiUtrInput,
         }),
       });
 
@@ -580,6 +606,7 @@ export default function Home() {
         setCheckoutOpen(false);
         setPaymentModalOpen(false);
         setUpiUtrInput("");
+        setPaymentScreenshot("");
       } else {
         setPopupMessage({ text: "Failed to place order. Please try again.", type: "error", title: "Order Failed" });
       }
@@ -617,6 +644,14 @@ export default function Home() {
     setCustomerRating(5);
     setCustomerReview("");
     setCustomerPhoto(null);
+
+    setPopupMessage({
+      title: "Review Submitted! 🎉",
+      text: "Thank you for reviewing NA KIRRAAK ADDA!\n\nTo publish your review live on Google Search & Maps for NA KIRRAAK ADDA, tap below to submit it directly on Google!",
+      type: "success",
+      actionUrl: "https://search.google.com/local/writereview?placeid=ChIJe3nifACZyzsRvxIWfLnfhgY",
+      actionLabel: "⭐ Publish Review on Google Maps ↗",
+    });
   };
 
   return (
@@ -1030,141 +1065,87 @@ export default function Home() {
             <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
               <span className="text-xs text-zinc-300">Amount Payable</span>
               <p className="text-3xl font-black text-emerald-400 mt-0.5">₹{grandTotal.toFixed(0)}</p>
-              {paymentMethod === "Bank Transfer" ? (
-                <p className="text-[11px] text-zinc-300 mt-1">Direct Bank Deposit Details Below</p>
-              ) : paymentMethod === "Card (Credit/Debit)" ? (
-                <p className="text-[11px] text-zinc-300 mt-1">Secure Credit / Debit Card Gateway</p>
-              ) : (
-                <p className="text-[11px] text-zinc-400 mt-1">Store UPI: <strong className="text-orange-400 font-bold">{gatewaySettings.upiId || "9966533466@ybl"}</strong> (NA KIRRAAK ADDA)</p>
-              )}
+              <p className="text-[11px] text-zinc-300 mt-1">
+                {paymentMethod === "Cash on Delivery" ? "Cash Payment Upon Delivery" : "Official Merchant Business Account Gateway"}
+              </p>
             </div>
 
-            {paymentMethod === "Bank Transfer" ? (
-              <div className="rounded-2xl border border-orange-500/40 bg-black/80 p-4 space-y-2 text-left">
-                <p className="text-xs font-bold text-orange-400 uppercase tracking-wider">🏦 Bank Transfer Details</p>
-                <div className="text-xs text-zinc-300 space-y-1 font-mono">
-                  {gatewaySettings.bankDetails ? (
-                    gatewaySettings.bankDetails.split("|").map((line: string, i: number) => (
-                      <p key={i}>• {line.trim()}</p>
-                    ))
+            {paymentMethod === "Cash on Delivery" ? (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-center space-y-2">
+                <span className="text-3xl">💵</span>
+                <h4 className="font-extrabold text-amber-400 text-sm">Cash on Delivery (COD)</h4>
+                <p className="text-xs text-zinc-300">
+                  Restaurant staff will call your mobile number (<strong>+91 {phone}</strong>) to confirm your order before cooking starts.
+                </p>
+                <div className="bg-black/60 p-2.5 rounded-xl border border-white/10 text-[11px] text-zinc-400 font-medium">
+                  📞 Order confirmation call required before kitchen preparation.
+                </div>
+              </div>
+            ) : !gatewaySettings?.hasCredentials && !gatewaySettings?.paytmActive && !gatewaySettings?.merchantId ? (
+              <div className="bg-amber-500/15 border border-amber-500/40 rounded-2xl p-5 text-center space-y-3 shadow-lg">
+                <span className="text-4xl">⚠️</span>
+                <h4 className="font-extrabold text-amber-400 text-base">No Active Payment Gateway</h4>
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  No payment methods or merchant gateways are currently enabled by the admin.
+                </p>
+                <p className="text-[11px] text-amber-300 font-semibold bg-black/60 p-2.5 rounded-xl border border-white/10">
+                  Please contact restaurant staff to complete your order.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-center space-y-3 shadow-xl">
+                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
+                  🔒 Official Paytm Merchant Gateway
+                </span>
+                <h4 className="font-black text-xl text-white">Total Payable: ₹{grandTotal.toFixed(0)}</h4>
+                <p className="text-xs text-zinc-300">
+                  Payment will be processed securely via NA KIRRAAK ADDA's Paytm Business Merchant Account.
+                </p>
+
+                {/* Mandatory Payment Screenshot Upload Box */}
+                <div className="pt-2 border-t border-emerald-500/20 text-left space-y-2">
+                  <label className="block text-xs font-bold text-amber-300 flex items-center justify-between">
+                    <span>📸 Upload Payment Receipt Screenshot <span className="text-red-400 font-extrabold">*Mandatory</span></span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setPaymentScreenshot(reader.result as string);
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="w-full text-xs text-zinc-300 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-amber-500 file:text-black hover:file:bg-amber-400 cursor-pointer"
+                  />
+                  {paymentScreenshot ? (
+                    <div className="flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/40 p-2 rounded-xl text-emerald-300 text-xs font-bold">
+                      <span>✅</span>
+                      <span>Payment Receipt Uploaded!</span>
+                    </div>
                   ) : (
-                    <>
-                      <p>• Bank: State Bank of India</p>
-                      <p>• A/C: 1234567890</p>
-                      <p>• IFSC: SBIN0001234</p>
-                      <p>• Name: NA KIRRAAK ADDA</p>
-                    </>
+                    <p className="text-[10px] text-amber-400 italic">
+                      ⚠️ Please attach a screenshot of your payment receipt for admin verification.
+                    </p>
                   )}
                 </div>
               </div>
-            ) : paymentMethod === "Card (Credit/Debit)" ? (
-              <div className="rounded-2xl border border-orange-500/40 bg-black/80 p-4 space-y-3 text-left">
-                <p className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>💳</span> Enter Card Details
-                </p>
-                <div>
-                  <label className="block text-[11px] text-zinc-400 mb-1">Cardholder Name</label>
-                  <input
-                    type="text"
-                    value={cardHolderInput}
-                    onChange={(e) => setCardHolderInput(e.target.value)}
-                    placeholder="Name on Card"
-                    className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-xs text-white outline-none focus:border-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-zinc-400 mb-1">16-Digit Card Number</label>
-                  <input
-                    type="text"
-                    maxLength={19}
-                    value={cardNumberInput}
-                    onChange={(e) => setCardNumberInput(e.target.value)}
-                    placeholder="4532 •••• •••• 8912"
-                    className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-xs text-white outline-none focus:border-orange-500 font-mono tracking-widest"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[11px] text-zinc-400 mb-1">Expiry (MM/YY)</label>
-                    <input
-                      type="text"
-                      maxLength={5}
-                      value={cardExpiryInput}
-                      onChange={(e) => setCardExpiryInput(e.target.value)}
-                      placeholder="08/28"
-                      className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-xs text-white outline-none focus:border-orange-500 font-mono text-center"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-zinc-400 mb-1">CVV / CVC</label>
-                    <input
-                      type="password"
-                      maxLength={4}
-                      value={cardCvvInput}
-                      onChange={(e) => setCardCvvInput(e.target.value)}
-                      placeholder="•••"
-                      className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-xs text-white outline-none focus:border-orange-500 font-mono text-center"
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* Dynamic UPI QR Code Image */}
-                <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-white text-center shadow-2xl">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=upi://pay?pa=${encodeURIComponent(gatewaySettings.upiId || "9966533466@ybl")}%26pn=NA%20KIRRAAK%20ADDA%26am=${grandTotal.toFixed(0)}%26cu=INR`}
-                    alt="UPI Payment QR Code"
-                    className="w-44 h-44 object-contain rounded-lg"
-                  />
-                  <p className="text-[11px] font-bold text-black mt-2">Scan with GPay, PhonePe, Paytm, or BHIM</p>
-                </div>
-
-                {/* Direct Pay Buttons for Mobile */}
-                <div className="grid grid-cols-3 gap-2">
-                  <a
-                    href={`upi://pay?pa=${encodeURIComponent(gatewaySettings.upiId || "9966533466@ybl")}&pn=NA%20KIRRAAK%20ADDA&am=${grandTotal.toFixed(0)}&cu=INR`}
-                    className="p-2.5 rounded-xl border border-white/10 bg-black/60 text-center text-xs font-bold text-white hover:border-orange-500"
-                  >
-                    📱 GPay / PhonePe
-                  </a>
-                  <a
-                    href={`upi://pay?pa=${encodeURIComponent(gatewaySettings.upiId || "9966533466@ybl")}&pn=NA%20KIRRAAK%20ADDA&am=${grandTotal.toFixed(0)}&cu=INR`}
-                    className="p-2.5 rounded-xl border border-white/10 bg-black/60 text-center text-xs font-bold text-white hover:border-orange-500"
-                  >
-                    📲 Paytm UPI
-                  </a>
-                  <a
-                    href={`upi://pay?pa=${encodeURIComponent(gatewaySettings.upiId || "9966533466@ybl")}&pn=NA%20KIRRAAK%20ADDA&am=${grandTotal.toFixed(0)}&cu=INR`}
-                    className="p-2.5 rounded-xl border border-white/10 bg-black/60 text-center text-xs font-bold text-white hover:border-orange-500"
-                  >
-                    💳 BHIM UPI
-                  </a>
-                </div>
-              </>
             )}
 
-            {/* Enter 12-digit UTR Ref Number */}
-            <div className="space-y-1.5 pt-2 border-t border-white/10">
-              <label className="block text-xs font-semibold text-zinc-300">
-                Enter Payment Reference / UTR Number
-              </label>
-              <input
-                type="text"
-                value={upiUtrInput}
-                onChange={(e) => setUpiUtrInput(e.target.value)}
-                placeholder="e.g. 123456789012 (from receipt or bank reference)"
-                className="w-full rounded-xl border border-white/10 bg-black/60 px-4 py-2.5 text-xs text-white outline-none focus:border-orange-500 font-mono"
-              />
-              <p className="text-[10px] text-zinc-400">Entering your UTR ensures instant payment verification by kitchen staff.</p>
-            </div>
-
-            <button
-              onClick={placeOrder}
-              className="w-full rounded-full bg-[#FF6B00] py-3 text-xs font-extrabold text-black hover:bg-orange-400 transition shadow-lg shadow-orange-500/20"
-            >
-              Confirm Payment & Submit Order — ₹{grandTotal.toFixed(0)}
-            </button>
+            {paymentMethod === "Cash on Delivery" || (gatewaySettings?.hasCredentials || gatewaySettings?.paytmActive || gatewaySettings?.merchantId) ? (
+              <button
+                onClick={placeOrder}
+                className="w-full rounded-full bg-[#FF6B00] py-3.5 text-xs font-black text-black hover:bg-orange-400 transition shadow-lg shadow-orange-500/20 uppercase tracking-wider"
+              >
+                {paymentMethod === "Cash on Delivery"
+                  ? "Submit Order (Awaiting Call Confirmation) 📞"
+                  : `⚡ Pay ₹${grandTotal.toFixed(0)} via Paytm Merchant Gateway →`}
+              </button>
+            ) : null}
           </div>
         </div>
       )}
@@ -1403,25 +1384,59 @@ export default function Home() {
               </button>
             </form>
 
-            {/* Submitted reviews list */}
-            <div className="space-y-4">
-              {customerReviews.length === 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-black/40 p-8 text-center text-zinc-400">
-                  <p className="text-xs">No reviews submitted yet. Be the first to share your experience!</p>
-                </div>
-              ) : (
-                customerReviews.map((rev) => (
-                  <div key={rev.id} className="rounded-2xl border border-white/10 bg-black/60 p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-white">{rev.name}</h4>
-                      <span className="text-xs text-orange-400">{"⭐".repeat(rev.rating)}</span>
-                    </div>
-                    <p className="text-xs text-zinc-300">{rev.review}</p>
-                    {rev.photo && (
-                      <img src={rev.photo} alt="Customer photo" className="h-20 w-auto rounded-xl object-cover mt-2 border border-white/10" />
-                    )}
+            {/* Right Side: Official Google Review QR Code & Customer Reviews */}
+            <div className="space-y-4 flex flex-col justify-between">
+              {/* Official Google Business Review QR Code Card */}
+              <div className="rounded-2xl border border-orange-500/40 bg-gradient-to-b from-amber-500/10 via-black/80 to-black p-6 text-center space-y-4 shadow-2xl relative overflow-hidden">
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-2xl">⭐</span>
+                  <div>
+                    <h3 className="text-lg font-black text-white">Google Customer Reviews</h3>
+                    <p className="text-[11px] text-orange-400 font-bold uppercase tracking-wider">NA KIRRAAK ADDA • Uppal</p>
                   </div>
-                ))
+                </div>
+
+                <div className="p-2.5 rounded-2xl max-w-[260px] mx-auto shadow-2xl">
+                  <img
+                    src="/images/google-review-badge.png"
+                    alt="NA KIRRAAK ADDA Google Review QR Code"
+                    className="w-full h-auto object-contain rounded-xl drop-shadow-2xl"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs text-zinc-300 font-medium">
+                    Scan with your mobile camera or tap below to leave us a 5-star review on Google!
+                  </p>
+                  <a
+                    href="https://search.google.com/local/writereview?placeid=ChIJe3nifACZyzsRvxIWfLnfhgY"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black py-3 rounded-xl text-xs shadow-xl transition"
+                  >
+                    <span>⭐ Rate & Write a Review on Google</span>
+                    <span>↗</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Local Website Reviews list */}
+              {customerReviews.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Recent Website Reviews</h4>
+                  {customerReviews.map((rev) => (
+                    <div key={rev.id} className="rounded-2xl border border-white/10 bg-black/60 p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-white">{rev.name}</h4>
+                        <span className="text-xs text-orange-400">{"⭐".repeat(rev.rating)}</span>
+                      </div>
+                      <p className="text-xs text-zinc-300">{rev.review}</p>
+                      {rev.photo && (
+                        <img src={rev.photo} alt="Customer photo" className="h-20 w-auto rounded-xl object-cover mt-2 border border-white/10" />
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -1502,12 +1517,24 @@ export default function Home() {
                 {popupMessage.text}
               </p>
             </div>
+            {popupMessage.actionUrl && (
+              <a
+                href={popupMessage.actionUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setPopupMessage(null)}
+                className="block w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 font-black py-3 rounded-xl text-xs shadow-lg transition"
+              >
+                {popupMessage.actionLabel || "⭐ Publish Review on Google Maps ↗"}
+              </a>
+            )}
+
             <button
               type="button"
               onClick={() => setPopupMessage(null)}
               className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black py-2.5 rounded-xl text-xs shadow transition"
             >
-              OK
+              Close
             </button>
           </div>
         </div>

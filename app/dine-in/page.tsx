@@ -46,6 +46,7 @@ function DineInContent() {
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
   const [utrReference, setUtrReference] = useState("");
+  const [paymentScreenshot, setPaymentScreenshot] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // In-App Custom Popup State (Replaces native browser alerts)
@@ -60,6 +61,7 @@ function DineInContent() {
   };
 
   // Payment Gateway State
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"paytm" | "cod">("paytm");
   const [paymentStep, setPaymentStep] = useState<"details" | "gateway">("details");
   const [paymentGatewayData, setPaymentGatewayData] = useState<{
     txnId: string;
@@ -68,6 +70,7 @@ function DineInContent() {
     qrCodeSvg: string;
     bankDetails: string;
     merchantId: string;
+    hasCredentials?: boolean;
   } | null>(null);
 
   // Dine-In Config & Admin Gateway Control
@@ -183,6 +186,62 @@ function DineInContent() {
     return true;
   });
 
+  // Direct COD Order Submission for Dine-In
+  const handleCodOrderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customerName.trim() || !phone.trim()) {
+      showAlert("Please enter your Name and Mobile Number", "error", "Input Required");
+      return;
+    }
+    if (cart.length === 0) {
+      showAlert("Your cart is empty", "error", "Cart Empty");
+      return;
+    }
+    setIsSubmitting(true);
+
+    try {
+      const orderPayload = {
+        customerName: customerName.trim(),
+        phone: phone.trim(),
+        address: `Dine-In (${tableNumber})`,
+        tableNumber: tableNumber,
+        orderType: "dine_in",
+        items: cart.map((c) => ({
+          id: c.item.id,
+          name: c.item.name,
+          price: c.item.price || c.item.base_price || 0,
+          quantity: c.quantity,
+        })),
+        subtotal: cartSubtotal,
+        gst: gstAmount,
+        deliveryCharge: 0,
+        grandTotal: grandTotal,
+        paymentMethod: "Cash on Delivery [Pending COD Confirmation]",
+        paymentStatus: "Pending COD Confirmation",
+        status: "Awaiting Call Confirmation",
+      };
+
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(orderPayload),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setCart([]);
+        setIsCheckoutOpen(false);
+        router.push(`/dine-in/status?orderId=${data.order?.id || ""}&table=${encodeURIComponent(tableNumber)}`);
+      } else {
+        showAlert(data.error || "Failed to place COD order", "error", "Order Error");
+      }
+    } catch (err: any) {
+      showAlert("Order submission failed: " + err.message, "error", "Order Error");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Step 1: Initiate Payment Gateway Transaction
   const handleInitiatePaymentGateway = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,6 +284,11 @@ function DineInContent() {
 
   // Step 2: Confirm Order after payment completion
   const handleFinalOrderSubmit = async () => {
+    if (!paymentScreenshot) {
+      showAlert("Please upload your payment receipt screenshot before submitting your order! Our admin team will verify the receipt image to confirm your order.", "error", "Payment Receipt Screenshot Required 📸");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -245,7 +309,9 @@ function DineInContent() {
         deliveryCharge: 0,
         grandTotal: grandTotal,
         paymentMethod: `Paytm Business Gateway (Txn: ${paymentGatewayData?.txnId || "Paid"}${utrReference ? `, Ref: ${utrReference}` : ""})`,
-        paymentStatus: "completed",
+        paymentStatus: paymentScreenshot || utrReference ? "pending" : "completed",
+        paymentScreenshot: paymentScreenshot,
+        upiUtrInput: utrReference,
       };
 
       const res = await fetch("/api/orders", {
@@ -607,34 +673,62 @@ function DineInContent() {
               </div>
             </div>
 
-            {/* Gateway Missing Warning (If Paytm Business Gateway active but MID/Key empty in Admin) */}
-            {dineInConfig.paytmActive && !dineInConfig.paytmHasCredentials ? (
-              <div className="bg-red-500/15 border border-red-500/40 rounded-2xl p-4 text-center space-y-2 shadow-lg">
-                <span className="text-3xl">⚠️</span>
-                <h4 className="font-extrabold text-red-400 text-sm">No Payment Gateway Configured</h4>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Paytm Business Gateway is enabled for customers, but Paytm Merchant Account Credentials (MID & Secret Key) have not been added in the Admin Panel yet.
-                </p>
-                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-[11px] text-amber-400 font-bold">
-                  Please contact the restaurant admin / staff to setup merchant account credentials.
-                </div>
-              </div>
-            ) : !hasAnyPaymentMethod ? (
+            {/* Payment Method Available Check */}
+            {!dineInConfig.enableCod && (!dineInConfig.paytmActive || !dineInConfig.paytmHasCredentials) ? (
               <div className="bg-amber-500/15 border border-amber-500/40 rounded-2xl p-4 text-center space-y-2 shadow-lg">
                 <span className="text-3xl">⚠️</span>
                 <h4 className="font-extrabold text-amber-400 text-sm">No Active Payment Gateway</h4>
-                <p className="text-xs text-slate-300">
+                <p className="text-xs text-slate-300 leading-relaxed">
                   No payment methods or merchant gateways are currently enabled by the admin.
                 </p>
-                <p className="text-[11px] text-slate-400 font-semibold">
+                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-[11px] text-slate-400 font-semibold">
                   Please contact restaurant staff to complete your order.
-                </p>
+                </div>
               </div>
             ) : (
               <>
-                {/* Step 1: Customer Details */}
+                {/* Step 1: Customer Details & Method Selection */}
                 {paymentStep === "details" && (
-                  <form onSubmit={handleInitiatePaymentGateway} className="space-y-3">
+                  <form
+                    onSubmit={(e) => {
+                      if (selectedPaymentMethod === "cod" || (!dineInConfig.paytmHasCredentials && dineInConfig.enableCod)) {
+                        handleCodOrderSubmit(e);
+                      } else {
+                        handleInitiatePaymentGateway(e);
+                      }
+                    }}
+                    className="space-y-3"
+                  >
+                    {/* Method Selector Pills if both are available */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {dineInConfig.paytmActive && dineInConfig.paytmHasCredentials && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPaymentMethod("paytm")}
+                          className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                            selectedPaymentMethod === "paytm"
+                              ? "bg-emerald-500/20 border-emerald-500 text-emerald-300"
+                              : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          <span>🔒</span> Paytm Gateway
+                        </button>
+                      )}
+                      {dineInConfig.enableCod && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPaymentMethod("cod")}
+                          className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                            selectedPaymentMethod === "cod" || !dineInConfig.paytmHasCredentials
+                              ? "bg-amber-500/20 border-amber-500 text-amber-300 col-span-2"
+                              : "bg-slate-950 border-slate-800 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          <span>💵</span> Pay at Table (COD)
+                        </button>
+                      )}
+                    </div>
+
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">Your Name</label>
                       <input
@@ -664,85 +758,93 @@ function DineInContent() {
                       disabled={isSubmitting}
                       className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black py-3 rounded-xl shadow-lg transition flex items-center justify-center gap-2"
                     >
-                      {isSubmitting ? "Initiating Paytm Gateway..." : `Pay ₹${grandTotal} via Paytm Gateway →`}
+                      {isSubmitting
+                        ? "Processing..."
+                        : selectedPaymentMethod === "cod" || (!dineInConfig.paytmHasCredentials && dineInConfig.enableCod)
+                        ? "Submit Order (Pay at Table) 💵"
+                        : `Pay ₹${grandTotal} via Paytm Gateway →`}
                     </button>
                   </form>
                 )}
 
-                {/* Step 2: Auto-Generated Order Payment Gateway Screen */}
+                {/* Step 2: Paytm Merchant Gateway Confirmation */}
                 {paymentStep === "gateway" && paymentGatewayData && (
                   <div className="space-y-4">
-                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 text-center space-y-3">
-                      <span className="inline-block bg-amber-500 text-slate-950 text-[10px] font-black uppercase px-2 py-0.5 rounded-md">
-                        Official Merchant Payment Gateway
-                      </span>
-                      
-                      <h4 className="text-xl font-black text-amber-400">Total Payable: ₹{grandTotal}</h4>
-                      <p className="text-[11px] text-slate-400 font-mono">Txn ID: {paymentGatewayData.txnId}</p>
+                    {!paymentGatewayData.hasCredentials ? (
+                      <div className="bg-amber-500/15 border border-amber-500/40 rounded-2xl p-5 text-center space-y-3 shadow-lg">
+                        <span className="text-4xl">⚠️</span>
+                        <h4 className="font-extrabold text-amber-400 text-base">No Active Payment Gateway</h4>
+                        <p className="text-xs text-slate-300 leading-relaxed">
+                          No payment methods or merchant gateways are currently enabled by the admin.
+                        </p>
+                        <p className="text-[11px] text-slate-400 font-semibold bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                          Please contact restaurant staff to complete your order.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-5 text-center space-y-3 shadow-xl">
+                        <span className="inline-block bg-emerald-500 text-slate-950 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
+                          🔒 Paytm Business Merchant Gateway
+                        </span>
+                        
+                        <h4 className="text-2xl font-black text-amber-400">Total Payable: ₹{grandTotal}</h4>
+                        <p className="text-[11px] text-slate-400 font-mono">Txn Reference: {paymentGatewayData.txnId}</p>
+                        <p className="text-xs text-slate-300">
+                          Payment will be processed via NA KIRRAAK ADDA's Paytm Business Merchant Account.
+                        </p>
 
-                      {/* Auto-Generated Dynamic Order QR Code */}
-                      {paymentGatewayData.qrCodeSvg && (
-                        <div className="bg-white p-3 rounded-2xl shadow-xl inline-block mx-auto border-2 border-amber-400">
-                          <div dangerouslySetInnerHTML={{ __html: paymentGatewayData.qrCodeSvg }} />
-                          <p className="text-[10px] text-slate-800 font-extrabold mt-1 uppercase tracking-wider">
-                            Order Payment Gateway QR Code
-                          </p>
+                        {/* Mandatory Receipt Screenshot Upload */}
+                        <div className="pt-2 border-t border-emerald-500/20 text-left space-y-2">
+                          <label className="block text-xs font-bold text-amber-300 flex items-center justify-between">
+                            <span>📸 Upload Payment Receipt Screenshot <span className="text-red-400 font-extrabold">*Mandatory</span></span>
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setPaymentScreenshot(reader.result as string);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            className="w-full text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer"
+                          />
+                          {paymentScreenshot ? (
+                            <div className="flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/40 p-2 rounded-xl text-emerald-300 text-xs font-bold">
+                              <span>✅</span>
+                              <span>Payment Receipt Uploaded!</span>
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-amber-400 italic">
+                              ⚠️ Please attach a screenshot of your payment receipt for admin verification.
+                            </p>
+                          )}
                         </div>
-                      )}
-
-                      {/* Merchant VPA Info */}
-                      {paymentGatewayData.upiId && (
-                        <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 text-xs text-left space-y-1">
-                          <div className="flex justify-between items-center">
-                            <span className="text-slate-400 text-[10px]">Paytm Merchant VPA</span>
-                            <span className="font-bold text-amber-400">{paymentGatewayData.upiId}</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Pay Button */}
-                      {paymentGatewayData.upiUri && (
-                        <button
-                          type="button"
-                          onClick={() => handlePayClick(paymentGatewayData.upiUri)}
-                          className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl text-xs shadow transition flex items-center justify-center gap-1.5"
-                        >
-                          <span>⚡ Pay ₹{grandTotal} via Paytm / GPay / PhonePe</span>
-                          <span>↗</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Transaction Ref / UTR Input */}
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                        Enter 12-Digit Payment UTR / Ref No. (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Enter 12-digit UTR or Transaction Ref"
-                        value={utrReference}
-                        onChange={(e) => setUtrReference(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
+                      </div>
+                    )}
 
                     <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={() => setPaymentStep("details")}
-                        className="w-1/3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs"
+                        className="w-1/3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl text-xs"
                       >
                         ← Back
                       </button>
-                      <button
-                        type="button"
-                        onClick={handleFinalOrderSubmit}
-                        disabled={isSubmitting}
-                        className="w-2/3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 font-black py-2.5 rounded-xl text-xs shadow-lg transition"
-                      >
-                        {isSubmitting ? "Placing Order..." : "Confirm & Send to Kitchen 👨‍🍳"}
-                      </button>
+                      {paymentGatewayData.hasCredentials && (
+                        <button
+                          type="button"
+                          onClick={handleFinalOrderSubmit}
+                          disabled={isSubmitting}
+                          className="w-2/3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 font-black py-3 rounded-xl text-xs shadow-lg transition"
+                        >
+                          {isSubmitting ? "Processing Gateway..." : "Confirm & Pay via Paytm Gateway ⚡"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

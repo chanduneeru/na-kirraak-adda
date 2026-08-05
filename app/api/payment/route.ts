@@ -10,7 +10,7 @@ export async function GET() {
     const upiId = config.upiId ? config.upiId.trim() : "";
     const isActive = Boolean(config.isActive);
 
-    const hasCredentials = Boolean((merchantId && merchantKey) || upiId);
+    const hasCredentials = Boolean(merchantId && merchantKey);
 
     return NextResponse.json({
       success: true,
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     const merchantKey = config.merchantKey ? config.merchantKey.trim() : "";
     const upiId = config.upiId ? config.upiId.trim() : "";
 
-    const hasCredentials = Boolean((merchantId && merchantKey) || upiId);
+    const hasCredentials = Boolean(merchantId && merchantKey);
 
     // 1. If Paytm Business Gateway is enabled but NO credentials (neither MID/Key nor Store UPI ID) are entered in Admin:
     if (isActive && !hasCredentials) {

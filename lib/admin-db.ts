@@ -436,6 +436,18 @@ try {
 try {
   db.exec(`ALTER TABLE customer_orders ADD COLUMN paymentStatus TEXT DEFAULT 'completed'`);
 } catch (e) {}
+try {
+  db.exec(`ALTER TABLE customer_orders ADD COLUMN paymentScreenshot TEXT DEFAULT ''`);
+} catch (e) {}
+try {
+  db.exec(`ALTER TABLE customer_orders ADD COLUMN declineReason TEXT DEFAULT ''`);
+} catch (e) {}
+try {
+  db.exec(`ALTER TABLE customer_orders ADD COLUMN chatMessages TEXT DEFAULT '[]'`);
+} catch (e) {}
+try {
+  db.exec(`ALTER TABLE customer_orders ADD COLUMN upiUtrInput TEXT DEFAULT ''`);
+} catch (e) {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS dine_in_config (
@@ -452,9 +464,11 @@ db.exec(`
 export function createOrder(order: any): any {
   const id = `order_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const now = Date.now();
+  const initialPaymentStatus = order.paymentScreenshot || order.upiUtrInput ? "pending" : (order.paymentStatus || "completed");
+  
   const stmt = db.prepare(`
-    INSERT INTO customer_orders (id, customerName, phone, address, items, subtotal, gst, deliveryCharge, total, status, paymentMethod, couponCode, deviceId, orderType, tableNumber, parentOrderId, paymentStatus, createdAt, updatedAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO customer_orders (id, customerName, phone, address, items, subtotal, gst, deliveryCharge, total, status, paymentMethod, couponCode, deviceId, orderType, tableNumber, parentOrderId, paymentStatus, paymentScreenshot, declineReason, chatMessages, upiUtrInput, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     id,
@@ -473,7 +487,11 @@ export function createOrder(order: any): any {
     order.orderType || 'online',
     order.tableNumber || '',
     order.parentOrderId || '',
-    order.paymentStatus || 'completed',
+    initialPaymentStatus,
+    order.paymentScreenshot || '',
+    order.declineReason || '',
+    typeof order.chatMessages === 'string' ? order.chatMessages : JSON.stringify(order.chatMessages || []),
+    order.upiUtrInput || '',
     now,
     now
   );
@@ -497,19 +515,73 @@ export function createOrder(order: any): any {
         orderType: order.orderType || 'online',
         tableNumber: order.tableNumber || '',
         parentOrderId: order.parentOrderId || '',
-        paymentStatus: order.paymentStatus || 'completed',
+        paymentStatus: initialPaymentStatus,
+        paymentScreenshot: order.paymentScreenshot || '',
+        declineReason: order.declineReason || '',
+        chatMessages: typeof order.chatMessages === 'string' ? order.chatMessages : JSON.stringify(order.chatMessages || []),
+        upiUtrInput: order.upiUtrInput || '',
         createdAt: now,
         updatedAt: now
       }]);
     } catch (e) {}
   }
 
-  return { id, ...order, createdAt: now, updatedAt: now };
+  return { id, ...order, paymentStatus: initialPaymentStatus, createdAt: now, updatedAt: now };
 }
 
 export function assignOrderStaff(id: string, staffName: string): boolean {
   const stmt = db.prepare(`UPDATE customer_orders SET assignedStaff = ?, updatedAt = ? WHERE id = ?`);
   stmt.run(staffName, Date.now(), id);
+  return true;
+}
+
+export function updateOrderPaymentVerification(id: string, paymentStatus: 'verified' | 'declined' | 'pending', declineReason: string = '', newOrderStatus?: string): boolean {
+  const now = Date.now();
+  if (newOrderStatus) {
+    const stmt = db.prepare(`UPDATE customer_orders SET paymentStatus = ?, declineReason = ?, status = ?, updatedAt = ? WHERE id = ?`);
+    stmt.run(paymentStatus, declineReason, newOrderStatus, now, id);
+  } else {
+    const stmt = db.prepare(`UPDATE customer_orders SET paymentStatus = ?, declineReason = ?, updatedAt = ? WHERE id = ?`);
+    stmt.run(paymentStatus, declineReason, now, id);
+  }
+  return true;
+}
+
+export function addOrderChatMessage(id: string, sender: 'customer' | 'admin', text: string): any {
+  const order = getOrder(id);
+  if (!order) return null;
+
+  let messages: any[] = [];
+  try {
+    messages = typeof (order as any).chatMessages === 'string' ? JSON.parse((order as any).chatMessages || '[]') : ((order as any).chatMessages || []);
+  } catch (e) {
+    messages = [];
+  }
+
+  const newMsg = {
+    id: `msg_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+    sender,
+    text,
+    timestamp: Date.now(),
+  };
+
+  messages.push(newMsg);
+
+  const stmt = db.prepare(`UPDATE customer_orders SET chatMessages = ?, updatedAt = ? WHERE id = ?`);
+  stmt.run(JSON.stringify(messages), Date.now(), id);
+
+  return newMsg;
+}
+
+export function updateOrderPaymentScreenshot(id: string, screenshot: string, upiUtrInput?: string): boolean {
+  const now = Date.now();
+  if (upiUtrInput) {
+    const stmt = db.prepare(`UPDATE customer_orders SET paymentScreenshot = ?, upiUtrInput = ?, paymentStatus = 'pending', updatedAt = ? WHERE id = ?`);
+    stmt.run(screenshot, upiUtrInput, now, id);
+  } else {
+    const stmt = db.prepare(`UPDATE customer_orders SET paymentScreenshot = ?, paymentStatus = 'pending', updatedAt = ? WHERE id = ?`);
+    stmt.run(screenshot, now, id);
+  }
   return true;
 }
 
@@ -574,7 +646,7 @@ export function updatePaytmConfig(data: any): any {
     merchantId: data.merchantId || "",
     merchantKey: data.merchantKey || "",
     website: data.website || "DEFAULT",
-    upiId: data.upiId || "9966533466@ybl",
+    upiId: data.upiId || "",
     isActive: Boolean(data.isActive),
     enableUpi: Boolean(data.enableUpi),
     enableBank: Boolean(data.enableBank),

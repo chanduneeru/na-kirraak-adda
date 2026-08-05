@@ -182,6 +182,74 @@ export default function AdminDashboard() {
   const [deliverySaveMsg, setDeliverySaveMsg] = useState("");
   const [mapLinkInput, setMapLinkInput] = useState("");
 
+  // Payment Verification & Live Chat States
+  const [activeChatOrder, setActiveChatOrder] = useState<any>(null);
+  const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null);
+  const [declineModalOrder, setDeclineModalOrder] = useState<any>(null);
+  const [declineReasonInput, setDeclineReasonInput] = useState<string>("");
+  const [adminChatMessage, setAdminChatMessage] = useState<string>("");
+
+  const handleVerifyPayment = async (orderId: string) => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify_payment" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadOrders();
+        if (activeChatOrder && activeChatOrder.id === orderId) {
+          fetchOrderChat(orderId);
+        }
+      }
+    } catch (e) {}
+  };
+
+  const handleDeclinePaymentSubmit = async () => {
+    if (!declineModalOrder) return;
+    try {
+      const res = await fetch(`/api/orders/${declineModalOrder.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "decline_payment", reason: declineReasonInput || "Incorrect payment amount or unclear screenshot" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDeclineModalOrder(null);
+        setDeclineReasonInput("");
+        loadOrders();
+      }
+    } catch (e) {}
+  };
+
+  const handleSendAdminChat = async (orderId: string) => {
+    if (!adminChatMessage.trim()) return;
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add_chat_message", sender: "admin", text: adminChatMessage.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAdminChatMessage("");
+        fetchOrderChat(orderId);
+        loadOrders();
+      }
+    } catch (e) {}
+  };
+
+  const fetchOrderChat = async (orderId: string) => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}`);
+      const data = await res.json();
+      if (data.success && data.order) {
+        setActiveChatOrder(data.order);
+      }
+    } catch (e) {}
+  };
+
   function parseLocationInput(input: string): { lat: number; lng: number } | null {
     if (!input || !input.trim()) return null;
     const str = input.trim();
@@ -1737,6 +1805,71 @@ export default function AdminDashboard() {
                               🔍 View Full Details
                             </button>
                           </div>
+
+                          {/* Payment Verification & Customer Chat Action Bar */}
+                          <div className="mt-3 bg-black/60 p-2.5 rounded-xl border border-white/10 flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="text-zinc-400 text-[11px]">Payment Verification:</span>
+                              {order.status === "Awaiting Call Confirmation" || ((order as any).paymentMethod === "Cash on Delivery" && order.status !== "Preparing" && order.status !== "Ready" && order.status !== "Completed") ? (
+                                <span className="bg-orange-500/20 text-orange-300 border border-orange-500/40 text-[10px] font-black px-2.5 py-1 rounded-full animate-pulse flex items-center gap-1">
+                                  📞 Call Confirmation Required
+                                </span>
+                              ) : (order as any).paymentStatus === "pending" || ((order as any).paymentScreenshot && (order as any).paymentStatus !== "verified" && (order as any).paymentStatus !== "declined") ? (
+                                <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse">
+                                  🟡 Verification Pending
+                                </span>
+                              ) : (order as any).paymentStatus === "verified" || order.status === "Preparing" || order.status === "Ready" || order.status === "Completed" ? (
+                                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black px-2 py-0.5 rounded-full">
+                                  ✅ Order Confirmed
+                                </span>
+                              ) : (order as any).paymentStatus === "declined" ? (
+                                <span className="bg-red-500/20 text-red-300 border border-red-500/40 text-[10px] font-black px-2 py-0.5 rounded-full">
+                                  ❌ Declined {(order as any).declineReason ? `(${ (order as any).declineReason })` : ""}
+                                </span>
+                              ) : (
+                                <span className="bg-zinc-800 text-zinc-300 border border-zinc-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                  ✓ Completed
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {(order as any).paymentScreenshot && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewScreenshotUrl((order as any).paymentScreenshot)}
+                                  className="bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-[11px] font-extrabold px-2.5 py-1 rounded-lg transition flex items-center gap-1"
+                                >
+                                  <span>📸 View Receipt Screenshot</span>
+                                </button>
+                              )}
+
+
+
+                              {(order as any).paymentStatus !== "verified" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleVerifyPayment(order.id)}
+                                  className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-black px-2.5 py-1 rounded-lg transition"
+                                >
+                                  ✅ Confirm
+                                </button>
+                              )}
+
+                              {(order as any).paymentStatus !== "declined" && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDeclineModalOrder(order);
+                                    setDeclineReasonInput("");
+                                  }}
+                                  className="bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 text-[11px] font-black px-2.5 py-1 rounded-lg transition"
+                                >
+                                  ❌ Decline
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
                         <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -2476,7 +2609,7 @@ export default function AdminDashboard() {
                 <span>💳</span> Paytm Business Account Credentials
               </h2>
               <p className="text-xs text-zinc-400">
-                Configure your official Paytm Merchant credentials here. You can fill <strong>Option A (Paytm MID & Secret Key)</strong> OR <strong>Option B (Paytm Store UPI ID / QR Link)</strong> — filling either option activates payments for your customers!
+                Configure your official Paytm Merchant Business details (MID & Secret Key) and enable/disable Cash on Delivery for customers.
               </p>
 
               {paytmSaveMsg && (
@@ -2488,8 +2621,8 @@ export default function AdminDashboard() {
               <form onSubmit={handleSavePaytmConfig} className="space-y-4">
                 <div className="bg-black/40 border border-white/10 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center gap-2">
-                    <span className="bg-orange-500/20 text-orange-300 text-[10px] font-black px-2 py-0.5 rounded uppercase">Option A</span>
-                    <h4 className="text-xs font-bold text-white">Paytm Merchant API Keys</h4>
+                    <span className="bg-orange-500/20 text-orange-300 text-[10px] font-black px-2 py-0.5 rounded uppercase">Paytm Merchant</span>
+                    <h4 className="text-xs font-bold text-white">Paytm Business Account API Credentials</h4>
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-zinc-400 mb-1">Paytm Merchant ID (MID)</label>
@@ -2526,102 +2659,17 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                <div className="bg-black/40 border border-white/10 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-black px-2 py-0.5 rounded uppercase">Option B (Direct & Fast)</span>
-                    <h4 className="text-xs font-bold text-white">Paytm Business Store UPI ID / QR Link</h4>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-400 mb-1">Paytm Store VPA / UPI ID</label>
-                    <input
-                      type="text"
-                      value={paytmConfig.upiId}
-                      onChange={(e) => setPaytmConfig({ ...paytmConfig, upiId: e.target.value })}
-                      placeholder="9966533466@paytm or nakirraakadda@paytm"
-                      className="w-full rounded-xl border border-white/10 bg-black/60 px-4 py-2.5 text-xs text-white outline-none focus:border-orange-500 font-mono"
-                    />
-                    <p className="text-[10px] text-zinc-400 mt-1">💡 Enter your shop's official Paytm Business UPI ID to generate instant order payment QR codes!</p>
-                  </div>
-                </div>
-
-                {/* Individual Payment Gateway Toggles */}
-                <div className="space-y-3 pt-4 border-t border-white/10">
-                  <h3 className="text-xs font-bold text-orange-400 uppercase tracking-wider">💳 Customer Payment Gateways Control</h3>
+                {/* Gateways & Payment Switches */}
+                <div className="space-y-3 pt-2">
+                  <h3 className="text-xs font-bold text-orange-400 uppercase tracking-wider">💳 Customer Payment Methods Control</h3>
                   
-                  {/* Enable UPI */}
-                  <div className="flex items-center justify-between p-3.5 rounded-xl border border-white/10 bg-black/40">
-                    <div>
-                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <span>📱</span> UPI / QR Code Payments
-                      </h4>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">Google Pay, PhonePe, Paytm, BHIM QR</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPaytmConfig({ ...paytmConfig, enableUpi: !paytmConfig.enableUpi })}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        paytmConfig.enableUpi ? "bg-emerald-500" : "bg-zinc-700"
-                      }`}
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${paytmConfig.enableUpi ? "translate-x-6" : "translate-x-1"}`} />
-                    </button>
-                  </div>
-
-                  {/* Enable Bank Transfer */}
-                  <div className="space-y-2 p-3.5 rounded-xl border border-white/10 bg-black/40">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                          <span>🏦</span> Bank Transfer / IMPS / NEFT
-                        </h4>
-                        <p className="text-[10px] text-zinc-400 mt-0.5">Direct Bank Account Payment</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setPaytmConfig({ ...paytmConfig, enableBank: !paytmConfig.enableBank })}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          paytmConfig.enableBank ? "bg-emerald-500" : "bg-zinc-700"
-                        }`}
-                      >
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${paytmConfig.enableBank ? "translate-x-6" : "translate-x-1"}`} />
-                      </button>
-                    </div>
-                    {paytmConfig.enableBank && (
-                      <textarea
-                        value={paytmConfig.bankDetails || ""}
-                        onChange={(e) => setPaytmConfig({ ...paytmConfig, bankDetails: e.target.value })}
-                        placeholder="Bank Name, Account Number, IFSC Code, Account Holder Name..."
-                        className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-xs text-white outline-none focus:border-orange-500 font-mono min-h-[60px]"
-                      />
-                    )}
-                  </div>
-
-                  {/* Enable Credit / Debit Card */}
-                  <div className="flex items-center justify-between p-3.5 rounded-xl border border-white/10 bg-black/40">
-                    <div>
-                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <span>💳</span> Credit / Debit Card Payments
-                      </h4>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">Visa, Mastercard, RuPay, Maestro Card Online</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPaytmConfig({ ...paytmConfig, enableCard: !paytmConfig.enableCard })}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        paytmConfig.enableCard ? "bg-emerald-500" : "bg-zinc-700"
-                      }`}
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${paytmConfig.enableCard ? "translate-x-6" : "translate-x-1"}`} />
-                    </button>
-                  </div>
-
                   {/* Enable Cash on Delivery */}
                   <div className="flex items-center justify-between p-3.5 rounded-xl border border-white/10 bg-black/40">
                     <div>
                       <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
                         <span>💵</span> Cash on Delivery (COD)
                       </h4>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">Pay cash upon delivery arrival</p>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">Pay cash upon delivery arrival or at dine-in table</p>
                     </div>
                     <button
                       type="button"
@@ -2633,30 +2681,32 @@ export default function AdminDashboard() {
                       <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${paytmConfig.enableCod ? "translate-x-6" : "translate-x-1"}`} />
                     </button>
                   </div>
-                </div>
 
-                <div className="flex items-center justify-between pt-2">
-                  <label className="text-xs font-semibold text-zinc-300">Enable Paytm Business Gateway for Customers</label>
-                  <button
-                    type="button"
-                    onClick={() => setPaytmConfig({ ...paytmConfig, isActive: !paytmConfig.isActive })}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      paytmConfig.isActive ? "bg-emerald-500" : "bg-zinc-700"
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        paytmConfig.isActive ? "translate-x-6" : "translate-x-1"
+                  {/* Enable Paytm Business Gateway */}
+                  <div className="flex items-center justify-between p-3.5 rounded-xl border border-white/10 bg-black/40">
+                    <div>
+                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>🔒</span> Paytm Business Gateway for Customers
+                      </h4>
+                      <p className="text-[10px] text-zinc-400 mt-0.5">Requires Paytm MID & Secret Key entered above</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPaytmConfig({ ...paytmConfig, isActive: !paytmConfig.isActive })}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        paytmConfig.isActive ? "bg-emerald-500" : "bg-zinc-700"
                       }`}
-                    />
-                  </button>
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${paytmConfig.isActive ? "translate-x-6" : "translate-x-1"}`} />
+                    </button>
+                  </div>
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full rounded-full bg-[#FF6B00] py-3 text-xs font-extrabold text-black hover:bg-orange-400 transition shadow-lg shadow-orange-500/20"
+                  className="w-full rounded-full bg-[#FF6B00] py-3.5 text-xs font-extrabold text-black hover:bg-orange-400 transition shadow-lg shadow-orange-500/20 uppercase tracking-wider"
                 >
-                  Save Paytm Business Credentials
+                  Save Paytm Business Credentials & Gateway Settings
                 </button>
               </form>
             </div>
@@ -3304,6 +3354,92 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* 1. Payment Screenshot Fullscreen Lightbox Modal */}
+      {previewScreenshotUrl && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4">
+          <div className="relative max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-3xl p-4 space-y-4 shadow-2xl overflow-hidden flex flex-col items-center text-center">
+            <div className="flex items-center justify-between w-full border-b border-slate-800 pb-3 px-2">
+              <h3 className="font-extrabold text-base text-amber-400 flex items-center gap-2">
+                <span>📸</span> Customer Payment Receipt / Screenshot
+              </h3>
+              <button
+                type="button"
+                onClick={() => setPreviewScreenshotUrl(null)}
+                className="text-slate-400 hover:text-white font-bold text-xl px-2 py-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-auto rounded-2xl border border-slate-800 bg-black p-2 w-full flex items-center justify-center">
+              <img
+                src={previewScreenshotUrl}
+                alt="Payment Screenshot Receipt"
+                className="max-h-[65vh] w-auto object-contain rounded-xl shadow-lg"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setPreviewScreenshotUrl(null)}
+              className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-6 py-2.5 rounded-xl text-xs shadow-lg transition"
+            >
+              Close Receipt Lightbox
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Decline Payment Reason Input Modal */}
+      {declineModalOrder && (
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#16120E] border border-red-500/40 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl text-white">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="font-extrabold text-base text-red-400 flex items-center gap-2">
+                <span>❌</span> Decline Payment Verification
+              </h3>
+              <button
+                type="button"
+                onClick={() => setDeclineModalOrder(null)}
+                className="text-zinc-400 hover:text-white font-bold text-xl px-2 py-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-300">
+              Please enter the reason for declining payment for order <strong>#{declineModalOrder.id.slice(-6).toUpperCase()}</strong> ({declineModalOrder.customerName}):
+            </p>
+
+            <textarea
+              value={declineReasonInput}
+              onChange={(e) => setDeclineReasonInput(e.target.value)}
+              placeholder="e.g. Incorrect transaction amount, fake screenshot, or UTR mismatch..."
+              className="w-full rounded-xl border border-white/10 bg-black/60 p-3 text-xs text-white outline-none focus:border-red-500 min-h-[80px]"
+            />
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeclineModalOrder(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeclinePaymentSubmit}
+                className="px-5 py-2 rounded-xl text-xs font-black bg-red-600 hover:bg-red-500 text-white shadow-lg"
+              >
+                Confirm Decline ❌
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
       </div>
     </div>
   );

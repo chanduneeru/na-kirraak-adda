@@ -36,13 +36,15 @@ export async function POST(request: Request) {
       gst: body.gst || 0,
       deliveryCharge: body.deliveryCharge !== undefined ? body.deliveryCharge : (isDineIn ? 0 : 0),
       total: body.grandTotal || body.total || 0,
-      status: "Received",
+      status: body.paymentMethod === "Cash on Delivery" ? "Awaiting Call Confirmation" : "Received",
       couponCode: body.couponCode || "",
       deviceId: body.deviceId || "",
       orderType: isDineIn ? "dine_in" : "online",
       tableNumber: body.tableNumber || "",
       parentOrderId: body.parentOrderId || "",
-      paymentStatus: body.paymentStatus || "completed",
+      paymentStatus: body.paymentMethod === "Cash on Delivery" ? "Pending COD Confirmation" : "pending",
+      paymentScreenshot: body.paymentScreenshot || "",
+      upiUtrInput: body.upiUtrInput || "",
     });
 
     // Send instant Email alert to Admin
