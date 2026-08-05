@@ -1834,13 +1834,16 @@ export default function AdminDashboard() {
                             </div>
 
                             <div className="flex flex-wrap items-center gap-1.5">
-                              {(order as any).paymentScreenshot && (
+                              {((order as any).paymentMethod?.includes("Cash on Delivery") || order.status === "Awaiting Call Confirmation") && (
                                 <button
                                   type="button"
-                                  onClick={() => setPreviewScreenshotUrl((order as any).paymentScreenshot)}
-                                  className="bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-[11px] font-extrabold px-2.5 py-1 rounded-lg transition flex items-center gap-1"
+                                  onClick={() => {
+                                    setActiveChatOrder(order);
+                                    fetchOrderChat(order.id);
+                                  }}
+                                  className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 border border-orange-500/40 text-[11px] font-extrabold px-2.5 py-1 rounded-lg transition flex items-center gap-1"
                                 >
-                                  <span>📸 View Receipt Screenshot</span>
+                                  <span>💬 COD Staff Chat</span>
                                 </button>
                               )}
 
@@ -3439,7 +3442,84 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* COD Live Customer Chat Drawer Modal */}
+      {activeChatOrder && (
+        <div className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex justify-end p-2 sm:p-4">
+          <div className="bg-[#16120E] border border-orange-500/40 rounded-3xl max-w-md w-full h-full flex flex-col shadow-2xl text-white overflow-hidden animate-in slide-in-from-right duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-black/40">
+              <div>
+                <span className="bg-orange-500/20 text-orange-300 border border-orange-500/40 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                  💬 COD Order Staff Chat
+                </span>
+                <h3 className="font-extrabold text-base text-white mt-1">
+                  {activeChatOrder.customerName} ({activeChatOrder.phone})
+                </h3>
+                <p className="text-[10px] text-zinc-400">Order #{activeChatOrder.id.slice(-6).toUpperCase()} • {activeChatOrder.address}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveChatOrder(null)}
+                className="text-zinc-400 hover:text-white font-bold text-xl px-2 py-1"
+              >
+                ✕
+              </button>
+            </div>
 
+            {/* Chat Messages Log */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-black/60">
+              {(!activeChatOrder.chatMessages || activeChatOrder.chatMessages.length === 0) ? (
+                <div className="text-center py-12 text-zinc-500 text-xs italic">
+                  No chat messages yet. Type a message below to communicate with {activeChatOrder.customerName}!
+                </div>
+              ) : (
+                (typeof activeChatOrder.chatMessages === "string" ? JSON.parse(activeChatOrder.chatMessages) : activeChatOrder.chatMessages).map((msg: any, idx: number) => (
+                  <div
+                    key={msg.id || idx}
+                    className={`flex flex-col ${msg.sender === "admin" ? "items-end" : "items-start"}`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed ${
+                        msg.sender === "admin"
+                          ? "bg-amber-500 text-slate-950 font-semibold rounded-br-none"
+                          : "bg-slate-800 text-white rounded-bl-none border border-slate-700"
+                      }`}
+                    >
+                      <p>{msg.text}</p>
+                    </div>
+                    <span className="text-[9px] text-zinc-500 mt-1 px-1">
+                      {msg.sender === "admin" ? "Store Staff" : activeChatOrder.customerName} • {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just Now"}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Send Chat Message Form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendAdminChat(activeChatOrder.id);
+              }}
+              className="p-3 border-t border-white/10 bg-black/80 flex gap-2"
+            >
+              <input
+                type="text"
+                value={adminChatMessage}
+                onChange={(e) => setAdminChatMessage(e.target.value)}
+                placeholder="Type message to customer..."
+                className="flex-1 rounded-xl border border-white/10 bg-black/60 px-3.5 py-2.5 text-xs text-white outline-none focus:border-amber-500"
+              />
+              <button
+                type="submit"
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs shadow transition"
+              >
+                Send 📤
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

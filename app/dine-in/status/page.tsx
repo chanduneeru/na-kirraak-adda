@@ -242,7 +242,7 @@ function DineInStatusContent() {
           <span>⭐</span>
           <span>Loved Your Experience at NA KIRRAAK ADDA?</span>
         </div>
-        <h3 className="text-base font-black text-white">Leave Us a 5-Star Google Review!</h3>
+        <h3 className="text-base font-black text-white">Rate Your Experience with NA KIRRAAK ADDA</h3>
         <p className="text-xs text-slate-300">
           Your feedback helps us cook better! Scan the QR or tap below to review us directly on Google.
         </p>
@@ -251,7 +251,7 @@ function DineInStatusContent() {
           <img
             src="/images/google-review-badge.png"
             alt="NA KIRRAAK ADDA Google Review QR Code"
-            className="w-full h-auto object-contain rounded-xl drop-shadow-2xl"
+            className="w-full rounded-xl border border-white/20 shadow-lg object-contain hover:scale-105 transition"
           />
         </div>
 
@@ -259,10 +259,9 @@ function DineInStatusContent() {
           href="https://search.google.com/local/writereview?placeid=ChIJe3nifACZyzsRvxIWfLnfhgY"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-1.5 w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black py-2.5 rounded-xl text-xs shadow-lg transition"
+          className="inline-flex items-center justify-center gap-2 w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-xs py-3 rounded-xl shadow-lg transition uppercase tracking-wider"
         >
-          <span>⭐ Write a Google Review Now</span>
-          <span>↗</span>
+          <span>⭐ Rate & Write a Review on Google →</span>
         </a>
       </div>
 
@@ -289,7 +288,7 @@ function DineInStatusContent() {
               <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
                 ✅ Order Confirmed!
               </span>
-              <h3 className="font-extrabold text-lg text-white mt-2">Rate Your Experience</h3>
+              <h3 className="font-extrabold text-lg text-white mt-2">Rate Your Experience with NA KIRRAAK ADDA</h3>
               <p className="text-xs text-zinc-300 mt-1">
                 Your order is confirmed & kitchen is cooking! How is your experience with NA KIRRAAK ADDA?
               </p>
@@ -322,13 +321,14 @@ function DineInStatusContent() {
                 onClick={() => {
                   if (typeof window !== "undefined") {
                     localStorage.setItem(`reviewed_order_${orderId}`, "true");
+                    window.open("https://search.google.com/local/writereview?placeid=ChIJe3nifACZyzsRvxIWfLnfhgY", "_blank");
                   }
                   setReviewSubmitted(true);
                   setShowReviewModal(false);
                 }}
-                className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black py-3 rounded-xl text-xs shadow-lg transition"
+                className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black py-3 rounded-xl text-xs shadow-lg transition flex items-center justify-center gap-1.5"
               >
-                Submit Review ⭐
+                <span>Submit & Post Review on Google ⭐</span>
               </button>
 
               <button
